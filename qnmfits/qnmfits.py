@@ -5,62 +5,6 @@ from .qnm import qnm
 qnm = qnm()
 
 
-def ringdown(time, start_time, complex_amplitudes, frequencies):
-    r"""
-    The base ringdown function, which has the form
-    
-    .. math:: 
-        h = h_+ - ih_\times
-        = \sum_{\ell m n} C_{\ell m n} e^{-i \omega_{\ell m n} (t - t_0)},
-             
-    where :math:`C_{\ell m n}` are complex amplitudes, 
-    :math:`\omega_{\ell m n} = 2\pi f_{\ell m n} - \frac{i}{\tau_{\ell m n}}` 
-    are complex frequencies, and :math:`t_0` is the start time of the 
-    ringdown.
-    
-    If start_time is after the first element of the time array, the model is 
-    zero-padded before that time. 
-    
-    The amplitudes should be given in the same order as the frequencies they
-    correspond to.
-    Parameters
-    ----------
-    time : array_like
-        The times at which the model is evalulated.
-        
-    start_time : float
-        The time at which the model begins. Should lie within the times array.
-        
-    complex_amplitudes : array_like
-        The complex amplitudes of the modes.
-        
-    frequencies : array_like
-        The complex frequencies of the modes. These should be ordered in the
-        same order as the amplitudes.
-    Returns
-    -------
-    h : ndarray
-        The plus and cross components of the ringdown waveform, expressed as a
-        complex number.
-    """
-    # Create an empty array to add the result to
-    h = np.zeros(len(time), dtype=complex)
-    
-    # Mask so that we only consider times after the start time
-    t_mask = time >= start_time
-
-    # Shift the time so that the waveform starts at time zero, and mask times
-    # after the start time
-    time = (time - start_time)[t_mask]
-        
-    # Construct the waveform, summing over each mode
-    h[t_mask] = np.sum([
-        complex_amplitudes[n]*np.exp(-1j*frequencies[n]*time)
-        for n in range(len(frequencies))], axis=0)
-        
-    return h
-
-
 def mismatch(times, wf_1, wf_2):
     """
     Calculates the mismatch between two complex waveforms.
