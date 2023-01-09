@@ -93,13 +93,13 @@ def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=10
     
     Parameters
     ----------
-    times : array_like
-        The times associated with the data to be fitted.
-        
-    data : array_like
+    data : WaveformModes
         The data to be fitted by the ringdown model.
+    
+    spherical_mode: tuple
+        The (l,m) mode to fit with the ringdown model.
         
-    modes : array_like
+    qnms : array_like
         A sequence of (l,m,n,sign) tuples to specify which QNMs to include in 
         the ringdown model. For regular (positive real part) modes use 
         sign=+1. For mirror (negative real part) modes use sign=-1. For 
@@ -138,6 +138,7 @@ def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=10
     T : float, optional
         The duration of the data to analyse, such that the end time is t0 + T. 
         The default is 100.
+        
     Returns
     -------
     best_fit : dict
@@ -150,21 +151,19 @@ def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=10
             - 'C' : ndarray
                 The best-fit complex amplitudes. There is a complex amplitude 
                 for each ringdown mode.
+            - 'frequencies' : ndarray
+                The values of the complex frequencies for all the ringdown 
+                modes.
             - 'data' : ndarray
                 The (masked) data used in the fit.
             - 'model': ndarray
                 The best-fit model waveform.
-            - 'model_times' : ndarray
-                The times at which the model is evaluated.
+            - 'times' : ndarray
+                The times at which the data and model are evaluated.
             - 't0' : float
                 The ringdown start time used in the fit.
             - 'modes' : ndarray
                 The ringdown modes used in the fit.
-            - 'mode_labels' : list
-                Labels for each of the ringdown modes (used for plotting).
-            - 'frequencies' : ndarray
-                The values of the complex frequencies for all the ringdown 
-                modes.
     """
     # Get the data array we want to fit to
     times = data.t
