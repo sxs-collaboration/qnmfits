@@ -40,7 +40,7 @@ def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=10
     data : WaveformModes
         The data to be fitted by the ringdown model.
     
-    spherical_mode: tuple
+    spherical_mode : tuple
         The (l,m) mode to fit with the ringdown model.
         
     qnms : array_like
