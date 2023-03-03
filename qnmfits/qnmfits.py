@@ -8,6 +8,7 @@ qnm = qnm()
 def mismatch(times, wf_1, wf_2):
     """
     Calculates the mismatch between two complex waveforms.
+    
     Parameters
     ----------
     times : array_like
@@ -27,6 +28,48 @@ def mismatch(times, wf_1, wf_2):
         np.trapz(np.real(wf_1 * np.conjugate(wf_1)), x=times)
         *np.trapz(np.real(wf_2 * np.conjugate(wf_2)), x=times)
         )
+    
+    return 1 - (numerator/denominator)
+
+
+def multimode_mismatch(times, wf_dict_1, wf_dict_2):
+    """
+    Calculates the multimode (sky-averaged) mismatch between two dictionaries 
+    of spherical-harmonic waveform modes. 
+    
+    If the two dictionaries have a different set of keys, the sum is performed
+    over the keys of wf_dict_1 (this may be the case, for example, if only a 
+    subset of spherical-harmonic modes are modelled).
+    
+    Parameters
+    ----------
+    times : array_like
+        The times at which the waveforms are evaluated.
+        
+    wf_dict_1, wf_dict_2 : dict
+        The two dictionaries of waveform modes to calculate the mismatch 
+        between.
+        
+    RETURNS
+    -------
+    M : float
+        The mismatch between the two waveforms.
+    """    
+    keys = list(wf_dict_1.keys())
+    
+    numerator = np.real(sum([
+        np.trapz(wf_dict_1[key] * np.conjugate(wf_dict_2[key]), x=times) 
+        for key in keys]))
+    
+    wf_1_norm = sum([
+        np.trapz(np.real(wf_dict_1[key] * np.conjugate(wf_dict_1[key])), x=times) 
+        for key in keys])
+    
+    wf_2_norm = sum([
+        np.trapz(np.real(wf_dict_2[key] * np.conjugate(wf_dict_2[key])), x=times) 
+        for key in keys])
+    
+    denominator = np.sqrt(wf_1_norm*wf_2_norm)
     
     return 1 - (numerator/denominator)
 
@@ -193,6 +236,8 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
         
     elif t0_method == 'closest':
         
+        # Use data.index_closest_to?
+        
         start_index = np.argmin((times-t0)**2)
         end_index = np.argmin((times-t0-T)**2)
         
@@ -200,8 +245,12 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
         data = data[start_index:end_index,:]
         
     else:
-        print("""Requested t0_method is not valid. Please choose between
-              'geq' and 'closest'.""")
+        print("""Requested t0_method is not valid. Please choose between 'geq'
+              and 'closest'.""")
+              
+    # The data in the form of a dictionary will be useful for the mismatch
+    # calculation. In future turn everything into WaveformModes?
+    data_dict = {mode: data[:,i] for i, mode in enumerate(spherical_modes)}
     
     # Frequencies
     # -----------
@@ -214,31 +263,27 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
     # -------------------
     
     # A list of lists for the mixing coefficient indices. The first list is
-    # associated with the first lm mode. The second list is associated with
-    # the second lm mode, and so on.
+    # associated with the first spherical mode. The second list is associated 
+    # with the second spherical mode, and so on.
     # e.g. [ [(2,2,2',2',0'), (2,2,3',2',0')], 
     #        [(3,2,2',2',0'), (3,2,3',2',0')] ]
     indices_lists = [
-        [spherical_mode+qnm for spherical_mode in spherical_modes] for qnm in qnms
+        [spherical_mode+qnm for qnm in qnms] for spherical_mode in spherical_modes
         ]
     
     # Convert each tuple of indices in indices_lists to a mu value
     mu_lists = np.array([qnm.mu_list(indices, chif) for indices in indices_lists])
     
-    
-        
     # Construct coefficient matrix and solve
     # --------------------------------------
     
-    # Construct the coefficient matrix
-    a = np.concatenate([np.array([
-        mu_lists[i][j]*np.exp(-1j*frequencies[j]*(times-t0)) 
-        for j in range(len(frequencies))]).T 
-        for i in range(len(spherical_modes))])
+    a = np.vstack(
+        [mu_list*np.exp(-1j*np.outer(times-t0, frequencies)) for mu_list in mu_lists]
+        )
 
     # Solve for the complex amplitudes, C. Also returns the sum of
     # residuals, the rank of a, and singular values of a.
-    C, res, rank, s = np.linalg.lstsq(a, data, rcond=None)
+    C, res, rank, s = np.linalg.lstsq(a, np.hstack(data.T), rcond=None)
     
     # Evaluate the model. This needs to be split up into the separate
     # spherical harmonic modes.
@@ -257,22 +302,17 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
     # Calculate the (sky-averaged) mismatch for the fit
     mm = multimode_mismatch(times, model_dict, data_dict)
     
-    # Create a list of mode labels (can be used for plotting)
-    labels = [str(mode) for mode in modes]
-    
     # Store all useful information to a output dictionary
     best_fit = {
         'residual': res,
         'mismatch': mm,
         'C': C,
         'weighted_C': weighted_C,
+        'frequencies': frequencies,
         'data': data_dict,
         'model': model_dict,
-        'model_times': times,
+        'times': times,
         't0': t0,
-        'modes': modes,
-        'mode_labels': labels,
-        'frequencies': frequencies
         }
     
     # Return the output dictionary

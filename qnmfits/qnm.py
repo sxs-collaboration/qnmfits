@@ -124,3 +124,95 @@ class qnm:
         #     return_list.append(sum(sum_list))
         # return return_list
         
+    def mu(self, l, m, lp, mp, nprime, sign, chif):
+        """
+        Return a spherical-spheroidal mixing coefficient, 
+        :math:`\mu_{\ell m \ell' m' n'}(\chi_f)`, for a particular spin and 
+        mode combination. The indices (l,m) refer to the spherical harmonic. 
+        The indices (l',m',n') refer to the spheroidal harmonic. The spin chif
+        can be a float or array_like.
+        
+        Parameters
+        ----------
+        l : int
+            The angular number of the spherical-harmonic mode.
+            
+        m : int
+            The azimuthal number of the spherical-harmonic mode.
+            
+        lp : int
+            The angular number of the spheroidal-harmonic mode.
+            
+        mp : int
+            The azimuthal number of the spheroidal-harmonic mode.
+            
+        nprime : int
+            The overtone number of the spheroidal-harmonic mode.
+            
+        sign : int
+            An integer with value +1 or -1, to indicate the sign of the real
+            part of the QNM frequency. If the mixing coefficient associated
+            with a -1 QNM (i.e. a mirror mode) is requested, then symmetry 
+            properties are used for the calculation.
+            
+        chif : float or array_like
+            The dimensionless spin magnitude of the final black hole.
+            
+        Returns
+        -------
+        complex or ndarray
+            The spherical-spheroidal mixing coefficient.
+        """
+        # There is no overlap between different values of m
+        if mp != m:
+            return 0
+        
+        # Load the correct qnm based on the type we want
+        m *= sign
+        mp *= sign
+        
+        # Our functions return all mixing coefficients with the given 
+        # (l',m',n'), so we need to index it to get the requested l
+        if abs(m) > 2:
+            index = l - abs(m)
+        else:
+            index = l - 2
+            
+        # Use the qnm package to get the qnm frequency
+        qnm_func = qnm_loader.modes_cache(-2, lp, mp, nprime)
+        omega, A, mu = qnm_func(chif)
+        mu = mu[index]
+            
+        # Use symmetry properties to get the mirror mixing coefficient, if 
+        # requested
+        if sign == -1:
+            mu = (-1)**(l+lp)*np.conjugate(mu)
+            
+        return mu
+        
+    def mu_list(self, indices, chif):
+        """
+        Return a list of mixing coefficients, for all requested indices.
+        
+        Parameters
+        ----------
+        indices : array_like
+            A sequence of (l,m,l',m',n',sign) tuples specifying which mixing 
+            coefficients to return.
+            
+        chif : float
+            The dimensionless spin magnitude of the final black hole.
+        Returns
+        -------
+        mus : list
+            The list of spherical-spheroidal mixing coefficients.
+        """
+        # List to store the mixing coeffs
+        mus = []
+        
+        # For each mode, call the qnm function and append the result to the 
+        # list
+        for l, m, lp, mp, nprime, sign in indices:
+            mus.append(self.mu(l, m, lp, mp, nprime, sign, chif))
+        
+        return mus
