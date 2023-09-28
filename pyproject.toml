@@ -15,6 +15,7 @@ license = { file="LICENSE" }
 requires-python = ">=3.8"
 dependencies = [
     "scri",
+    "qnm"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
