@@ -78,22 +78,12 @@ class cce:
                     wf_json_path
                     ) 
         
+        # Get a dictionary of paths for each file, and create the 
+        # AsymptoticBondiData object
         wf_paths = {}
         for keyword, argument in zip(['h', 'Psi4', 'Psi3', 'Psi2', 'Psi1', 'Psi0'], wf_types):
-            wf_paths[keyword] = sim_dir / f'{wf}_BondiCce_R{R:04d}_CoM.h5'
+            wf_paths[keyword] = sim_dir / f'{argument}_BondiCce_R{R:04d}_CoM.h5'
 
-        abd = scri.SpEC.create_abd_from_h5('RPXMB', **wf_paths)
+        abd = scri.SpEC.create_abd_from_h5(file_format='RPXMB', **wf_paths)
 
         return abd, metadata
-                
-            
-
-
-
-
-class cce_sim:
-
-    def __init__(self, abd, metadata):
-
-        self.abd = abd
-        self.metadata = metadata
