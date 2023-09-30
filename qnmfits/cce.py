@@ -1,10 +1,16 @@
+import numpy as np
+
 import json
 import scri
+import pickle
 
 from pathlib import Path
 from urllib.request import urlretrieve
 
 class cce:
+    """
+    A class for loading simulations from the CCE catalog.
+    """
 
     def __init__(self):
         """
@@ -18,7 +24,20 @@ class cce:
             self.catalog = json.load(f)
         
     def load(self, ID):
+        """
+        Load a simulation from the catalog, and add the simulation directory
+        and metadata to the AsymptoticBondiData object.
 
+        Parameters
+        ----------
+        ID : int
+            The ID of the simulation to load.
+
+        Returns
+        -------
+        abd : AsymptoticBondiData
+            The simulation data.
+        """
         # Convert the ID to the simulation name
         name = f'SXS:BBH_ExtCCE:{int(ID):04d}'
 
@@ -85,5 +104,84 @@ class cce:
             wf_paths[keyword] = sim_dir / f'{argument}_BondiCce_R{R:04d}_CoM.h5'
 
         abd = scri.SpEC.create_abd_from_h5(file_format='RPXMB', **wf_paths)
+        
+        # Store the simulation directory and metadata in the object
+        abd.sim_dir = sim_dir
+        abd.metadata = metadata
 
-        return abd, metadata
+        return abd
+    
+
+    def abd_to_h(self, abd):
+        """
+        Convert an AsymptoticBondiData object to a WaveformModes object.
+        
+        Parameters
+        ----------
+        abd : AsymptoticBondiData
+            The simulation data.
+        
+        Returns
+        -------
+        h_wm : WaveformModes
+            The simulation data in the WaveformModes format.
+        """
+        # The strain is related to the shear in the following way
+        h = 2*abd.sigma.bar
+
+        # Convert to a WaveformModes object
+        h_wm = scri.WaveformModes(
+            dataType = scri.h,
+            t = h.t,
+            data = np.array(h)[:,h.index(abs(h.s),-abs(h.s)):],
+            ell_min = 2,
+            ell_max = h.ell_max,
+            frameType = scri.Inertial,
+            r_is_scaled_out = True,
+            m_is_scaled_out = True,
+        )
+
+        return h_wm
+
+
+    def map_to_superrest(self, abd):
+        """
+        Map an AsymptoticBondiData object to the superrest frame.
+
+        Parameters
+        ----------
+        abd : AsymptoticBondiData
+            The simulation data.
+
+        Returns
+        -------
+        abd_prime : AsymptoticBondiData
+            The simulation data in the superrest frame.
+        """
+        # The extraction radius of the simulation
+        R = abd.metadata['preferred_R']
+
+        # Check if the transformation to the superrest frame has already been
+        # done
+        wf_path = abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_superrest.pickle'
+
+        if not wf_path.is_file():
+
+            # Convert to a WaveformModes object to find time of peak strain
+            h = self.abd_to_h(abd)
+        
+            # Shift the zero time to be at the peak of the strain
+            abd.t -= abd.t[np.argmax(h.norm())]
+
+            # Convert to the superrest frame
+            abd_prime, transformations = abd.map_to_superrest_frame(t_0=300)
+
+            # Save to file
+            with open(wf_path, 'wb') as f:
+                pickle.dump(abd_prime, f)
+
+        # Load from file
+        with open(wf_path, 'rb') as f:
+            abd_prime = pickle.load(f)
+
+        return abd_prime
