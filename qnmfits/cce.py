@@ -134,7 +134,7 @@ class cce:
             dataType = scri.h,
             t = h.t,
             data = np.array(h)[:,h.index(abs(h.s),-abs(h.s)):],
-            ell_min = 2,
+            ell_min =abs(h.s),
             ell_max = h.ell_max,
             frameType = scri.Inertial,
             r_is_scaled_out = True,
@@ -144,7 +144,7 @@ class cce:
         return h_wm
 
 
-    def map_to_superrest(self, abd):
+    def map_to_superrest(self, abd, window=True):
         """
         Map an AsymptoticBondiData object to the superrest frame.
 
@@ -153,13 +153,18 @@ class cce:
         abd : AsymptoticBondiData
             The simulation data.
 
+        window : bool, optional
+            Whether to window the data to speed up the transformation. Waveform
+            data 100M before the peak of the strain is removed. Default is 
+            True.
+
         Returns
         -------
         abd_prime : AsymptoticBondiData
             The simulation data in the superrest frame.
         """
         # The extraction radius of the simulation
-        R = abd.metadata['preferred_R']
+        R = int(abd.metadata['preferred_R'])
 
         # Check if the transformation to the superrest frame has already been
         # done
@@ -172,6 +177,11 @@ class cce:
         
             # Shift the zero time to be at the peak of the strain
             abd.t -= abd.t[np.argmax(h.norm())]
+
+            # Window the data to speed up the transformation
+            if window:
+                new_times = abd.t[abd.t > -100]
+                abd = abd.interpolate(new_times)
 
             # Convert to the superrest frame
             abd_prime, transformations = abd.map_to_superrest_frame(t_0=300)
