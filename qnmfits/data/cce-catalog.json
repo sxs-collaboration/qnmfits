@@ -6,6 +6,62 @@
     },
     {
         "name": "SXS:BBH_ExtCCE:0002",
-        "url": "https://zenodo.org/record/4734902"
+        "url": "https://zenodo.org/record/4734902",
+        "preferred_R": "261"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0003",
+        "url": "https://zenodo.org/record/4734942",
+        "preferred_R": "250"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0004",
+        "url": "https://zenodo.org/record/4735038",
+        "preferred_R": "236"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0005",
+        "url": "https://zenodo.org/record/4735071",
+        "preferred_R": "274"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0006",
+        "url": "https://zenodo.org/record/4735115",
+        "preferred_R": "273"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0007",
+        "url": "https://zenodo.org/record/4735163",
+        "preferred_R": "270"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0008",
+        "url": "https://zenodo.org/record/4735213",
+        "preferred_R": "305"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0009",
+        "url": "https://zenodo.org/record/4735279",
+        "preferred_R": "270"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0010",
+        "url": "https://zenodo.org/record/4735322",
+        "preferred_R": "235"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0011",
+        "url": "https://zenodo.org/record/4735374",
+        "preferred_R": "222"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0012",
+        "url": "https://zenodo.org/record/4735424",
+        "preferred_R": "223"
+    },
+    {
+        "name": "SXS:BBH_ExtCCE:0013",
+        "url": "https://zenodo.org/record/4735478",
+        "preferred_R": "237"
     }
 ]
