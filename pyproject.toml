@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "qnmfits"
 version = "0.0.1"
 authors = [
-  { name="Eliot Finch", email="efinch@star.sr.bham.ac.uk" },
+  { name="Eliot Finch", email="efinch@caltech.edu" },
   { name="Lorena Magana Zertuche", email="lmaganaz@go.olemiss.edu"},
 ]
 description = "Fitting of quasinormal modes to ringdown waveforms."
