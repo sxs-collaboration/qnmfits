@@ -1,27 +1,17 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
 
 [project]
 name = "qnmfits"
-version = "0.0.1"
 authors = [
-  { name="Eliot Finch", email="efinch@caltech.edu" },
-  { name="Lorena Magana Zertuche", email="lmaganaz@go.olemiss.edu"},
-]
-description = "Fitting of quasinormal modes to ringdown waveforms."
+  {name = "Eliot Finch", email = "efinch@caltech.edu"},
+  {name = "Lorena Magana Zertuche", email = "lmaganaz@go.olemiss.edu"}
+  ]
 readme = "README.md"
-license = { file="LICENSE" }
-requires-python = ">=3.8"
-dependencies = [
-    "scri",
-    "qnm"
-]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
+license = {file = "LICENSE"}
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version", "description"]
 
 [project.urls]
-"Homepage" = "https://github.com/sxs-collaboration/qnmfits"
+Home = "https://github.com/sxs-collaboration/qnmfits"
