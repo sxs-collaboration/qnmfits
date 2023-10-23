@@ -1,14 +1,41 @@
 import numpy as np
 import qnm as qnm_loader
 
+import os
+
+from scipy.interpolate import CubicSpline
+from functools import lru_cache
+
 
 class qnm:
     """
     Class for loading quasinormal mode (QNM) frequencies and spherical-
     spheroidal mixing coefficients. This makes use of the qnm package,
-    https://arxiv.org/abs/1908.10377
+    https://arxiv.org/abs/1908.10377.
+    The method used by the qnm package breaks down for the (2,2,8) mode. We 
+    load data for this mode separately, avaliable at 
+    https://codeberg.org/GW_Ringdown/QNMdata. See also 
+    https://arxiv.org/abs/2107.11829. Currently only the (2,2,8) frequency is
+    loaded, and so there may be problems with the mixing coefficients for this
+    mode.
     """
+
+    def __init__(self):
+        """
+        Initialise the qnm class.
+        """
+        # The directory of this file (current working directory)
+        cwd = os.path.abspath(os.path.dirname(__file__))
         
+        # Load the data for the (2,2,8) mode. The QNM frequency and angular 
+        # separation constants are provided.
+        w228table = np.loadtxt(f'{cwd}/data/w228table.dat')
+        spins, real_omega, imag_omega, real_A, imag_A = w228table.T
+        omega = real_omega + 1j*imag_omega
+
+        self.n8_qnm_func = CubicSpline(spins, omega)
+    
+    @lru_cache
     def omega(self, l, m, n, sign, chif, Mf=1):
         """
         Return a complex frequency, :math:`\omega_{\ell m n}(M_f, \chi_f)`,
@@ -64,10 +91,15 @@ class qnm:
         """
         # Load the correct qnm based on the type we want
         m *= sign
+
+        if (l,m,n) == (2,2,8):
+            # Use separate data for this special mode
+            omega = self.n8_qnm_func(chif)
         
-        # Use the qnm package to get the qnm frequency
-        qnm_func = qnm_loader.modes_cache(-2, l, m, n)
-        omega, A, mu = qnm_func(chif)
+        else:
+            # Use the qnm package
+            qnm_func = qnm_loader.modes_cache(-2, l, m, n)
+            omega, A, mu = qnm_func(chif)
             
         # Use symmetry properties to get the mirror mode, if requested
         if sign == -1:
