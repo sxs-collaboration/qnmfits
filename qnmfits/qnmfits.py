@@ -1,5 +1,7 @@
 import numpy as np
 
+from scipy.optimize import minimize
+
 # Class to load QNM frequencies and mixing coefficients
 from .qnm import qnm
 qnm = qnm()
@@ -317,3 +319,138 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
     
     # Return the output dictionary
     return best_fit
+
+
+def calculate_epsilon(data, spherical_mode, qnms, Mf, chif, t0, 
+                      t0_method='geq', T=100, min_method='Nelder-Mead'):
+    r"""
+    Find the Mf and chif values that minimize the mismatch for a given
+    ringdown start time and model, and from this calculate the 'distance' of 
+    the best fit mass and spin values from the true remnant properties 
+    (expressed through epsilon).
+
+    Parameters
+    ----------
+    data : WaveformModes
+        The data to be fitted by the ringdown model.
+    
+    spherical_mode : tuple
+        The (l,m) mode to fit with the ringdown model.
+        
+    qnms : array_like
+        A sequence of (l,m,n,sign) tuples to specify which QNMs to include in 
+        the ringdown model. For regular (positive real part) modes use 
+        sign=+1. For mirror (negative real part) modes use sign=-1. For 
+        nonlinear modes, the tuple has the form 
+        (l1,m1,n1,sign1,l2,m2,n2,sign2,...).
+        
+    Mf : float
+        The remnant black hole mass. Along with calculating epsilon, this is
+        used for the initial guess in the minimization.
+        
+    chif : float
+        The magnitude of the remnant black hole spin. Along with calculating 
+        epsilon, this is used for the initial guess in the minimization.
+        
+    t0 : float
+        The start time of the ringdown model.
+        
+    t0_method : str, optional
+        A requested ringdown start time will in general lie between times on
+        the default time array (the same is true for the end time of the
+        analysis). There are different approaches to deal with this, which can
+        be specified here.
+        
+        Options are:
+            
+            - 'geq'
+                Take data at times greater than or equal to t0. Note that
+                we still treat the ringdown start time as occuring at t0,
+                so the best fit coefficients are defined with respect to 
+                t0.
+
+            - 'closest'
+                Identify the data point occuring at a time closest to t0, 
+                and take times from there.
+                
+        The default is 'geq'.
+        
+    T : float, optional
+        The duration of the data to analyse, such that the end time is t0 + T. 
+        The default is 100.
+        
+    spherical_modes : array_like, optional
+        A sequence of (l,m) tuples to specify which spherical-harmonic modes 
+        the analysis should be performed on. If None, all the modes contained 
+        in data_dict are used. The default is None.
+        
+    min_method : str, optional
+        The method used to find the mismatch minimum in the mass-spin space.
+        This can be any method available to scipy.optimize.minimize. This 
+        includes None, in which case the method is automatically chosen. The
+        default is 'Nelder-Mead'.
+
+    Returns
+    -------
+    epsilon : float
+        The difference between the true Mf and chif values and values that 
+        minimize the mismatch. Defined as 
+        
+        .. math::
+            \epsilon = \sqrt{ \left( \delta M_f \right)^2 + 
+                              \left( \delta\chi_f \right)^2 }.
+            
+        where :math:`\delta M_f = M_\mathrm{best fit} - M_f` and 
+        :math:`\delta \chi_f = \chi_\mathrm{best fit} - \chi_f`
+        
+    Mf_bestfit: float
+        The remnant mass that minimizes the mismatch.
+             
+    chif_bestfit : float
+        The remnant spin that minimizes the mismatch.
+    """ 
+    # The initial guess in the minimization
+    x0 = [Mf, chif]
+    
+    # Other settings for the minimzation
+    bounds = [(0,1.5), (0,0.99)]
+    options = {'xatol':1e-6,'disp':False}
+        
+    def mismatch_M_chi(x, data, spherical_mode, qnms, t0, t0_method, T):
+        """
+        A wrapper for the ringdown_fit function, for use with the SciPy 
+        minimize function.
+        """
+        Mf = x[0]
+        chif = x[1]
+        
+        if chif > 0.99:
+            chif = 0.99
+        if chif < 0:
+            chif = 0
+        
+        best_fit = ringdown_fit(
+            data, spherical_mode, qnms, Mf, chif, t0, t0_method, T)
+        
+        return best_fit['mismatch']
+    
+    # Perform the SciPy minimization
+    res = minimize(
+        mismatch_M_chi, 
+        x0,
+        args=(data, spherical_mode, qnms, t0, t0_method, T),
+        method=min_method, 
+        bounds=bounds, 
+        options=options
+        )
+
+    # The remnant properties that give the minimum mismatch
+    Mf_bestfit = res.x[0]
+    chif_bestfit = res.x[1]
+        
+    # Calculate epsilon
+    delta_Mf = Mf_bestfit - Mf
+    delta_chif = chif_bestfit - chif
+    epsilon = np.sqrt(delta_Mf**2 + delta_chif**2)
+        
+    return epsilon, Mf_bestfit, chif_bestfit
