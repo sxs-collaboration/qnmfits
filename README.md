@@ -75,4 +75,4 @@ If this package contributes to a project that leads to a publication,
 please acknowledge this by citing the `qnmfits` article in.
 
 ## Credits
-The code is developed and maintained by [Lorena Magana Zertuche](https://github.com/lmagana3) and [Eliot Finch](https://github.com/eliotfinch).
+The code is developed and maintained by [Lorena Magaña Zertuche](https://github.com/lmagana3) and [Eliot Finch](https://github.com/eliotfinch).
