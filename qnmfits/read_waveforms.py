@@ -6,6 +6,7 @@ import os
 import spherical_functions as sf
 import sxs
 import scri
+from scri.asymptotic_bondi_data import map_to_superrest_frame
 import quaternion
 
 import numpy as np
@@ -88,6 +89,7 @@ def get_CCE_radii(simulation_dir, radius_index = None):
         return radii[radius_index:radius_index+1]
     else:
         return radii
+
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
         sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
     """Returns metadata structure, WaveformModes object, and sxs_id
@@ -149,7 +151,7 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     W.t = W.t - W.t[trim_ind]
     return md, W, sxs_id
 
-def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
+def load_CCENR_data(cce_dir, file_format='SXS'):
     """Returns an AsymptoticBondiData object and WaveformModes object. 
 
     Paremeters
@@ -157,9 +159,13 @@ def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
     cce_dir : str
         Directory where specific CCE waveform data is located
 
-    end_string: str, optional [Default: '_CoM_Bondi']
-        End string of the CCE waveform data
+    file_format: str, optional [Default: 'SXS']
+        'SXS' for data stored in .h5 format and 'RPXMB' for data store in both
+        .h5 and .json formats.
 
+    Example:
+    load_CCENR_data("/Users/Username/Simulations/CCE_XXXX/LevX")
+    
     Returns
     -------
     abd_CCE : AsymptoticBondiData
@@ -170,18 +176,53 @@ def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
     """
     radius = get_CCE_radii(cce_dir)[0]
     abd_CCE = scri.SpEC.file_io.create_abd_from_h5(\
-                        h = f'{cce_dir}rhOverM_BondiCce_R{radius}{end_string}.h5',
-                        Psi4 = f'{cce_dir}rMPsi4_BondiCce_R{radius}{end_string}.h5',
-                        Psi3 = f'{cce_dir}r2Psi3_BondiCce_R{radius}{end_string}.h5',
-                        Psi2 = f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}{end_string}.h5',
-                        Psi1 = f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}{end_string}.h5',
-                        Psi0 = f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}{end_string}.h5',
-                        file_format = 'SXS')
+                        h = f'{cce_dir}rhOverM_BondiCce_R{radius}_CoM.h5',
+                        Psi4 = f'{cce_dir}rMPsi4_BondiCce_R{radius}_CoM.h5',
+                        Psi3 = f'{cce_dir}r2Psi3_BondiCce_R{radius}_CoM.h5',
+                        Psi2 = f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}_CoM.h5',
+                        Psi1 = f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}_CoM.h5',
+                        Psi0 = f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}_CoM.h5',
+                        file_format = file_format)
     h_CCE = MT_to_WM(2.0*abd_CCE.sigma.bar)
     trim_ind = h_CCE.max_norm_index()
     h_CCE.t -= h_CCE.t[trim_ind]
     return abd_CCE, h_CCE
 
+def to_superrest_frame(abd_CCE, t_0=350, padding_time=50, save=False,
+                       sim_name=None):
+    """Maps waveform into the BMS superrest frame of the remnant black hole.
+
+    Parameters
+    ----------
+    abd_CCE : AsymptoticBondiData
+
+    t_0 : float, optional [Default: 350.]
+        Time to map to the superrest frame of the remnant black hole.
+
+    padding_time : float, optional [Default: 50.]
+        Amount by which to pad around t_0 to speed up computations.
+
+    save : bool, optional [Default: False]
+        If True, the supertranslated waveform will be saved in a directory
+        called 'BMS_data'.
+
+    sim_name : str, optional [Default: None]
+        Use if saving the waveform. Format is h_{sim_name}_superrest.h5
+
+    Returns
+    -------
+    h_superrest : WaveformModes
+        WaveformModes object in the BMS superrest frame
+
+    """
+
+    abd_superrest, transformations = map_to_superrest_frame(abd_CCE, t_0=t_0,
+                                                            padding_time=padding_time)
+    h_superrest = MT_to_WM(2.0*abd_superrest.sigma.bar)
+    if save:
+        scri.SpEC.file_io.write_to_h5(h_superrest, f"./BMS_data/h_{sim_name}_superrest.h5", 
+                                      file_write_mode="w", attributes={}, use_NRAR_format=True)
+    return h_superrest
 
 def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
     '''Waveforms are assumed to have z-axis aligned by final spin or something else, 
