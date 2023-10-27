@@ -1,10 +1,88 @@
 import numpy as np
 
+import scri
+
 from scipy.optimize import minimize
 
 # Class to load QNM frequencies and mixing coefficients
 from .qnm import qnm
 qnm = qnm()
+
+
+def n_modes(ell_max, ell_min=2):
+    """
+    Calculates the number of spherical-harmonic modes between ell_min and
+    ell_max.
+
+    Parameters
+    ----------
+    ell_max : int
+        The maximum value of ell.
+
+    ell_min : int, optional
+        The minimum value of ell. The default is 2.
+
+    Returns
+    -------
+    int
+        The number of spherical-harmonic modes between ell_min and ell_max.
+    """
+    return sum([2*ell+1 for ell in range(ell_min, ell_max+1)])
+
+
+def to_WaveformModes(times, data, ell_max, ell_min=2):
+    """
+    Convert a dictionary of spherical-harmonic modes or a NumPy array to a 
+    WaveformModes object.
+
+    Parameters
+    ----------
+    times : array_like
+        The times at which the waveforms are evaluated.
+
+    data : dict or ndarray
+        The spherical-harmonic waveform modes to convert to a WaveformModes
+        object. If data is a dictionary, the keys are (ell,m) tuples and the
+        values are the waveform data. If data is a NumPy array, the columns
+        must correspond to the (ell,m) modes in the specific order required by
+        scri: see the scri.WaveformModes documentation for details.
+
+    ell_max : int
+        The maximum value of ell included in the data.
+
+    ell_min : int, optional
+        The minimum value of ell included in the data. The default is 2.
+
+    Returns
+    -------
+    h : WaveformModes
+        The spherical-harmonic waveform modes in the WaveformModes format.
+    """
+    # Ensure data is in the correct format
+    formatted_data = np.zeros((len(times), n_modes(ell_max, ell_min)), dtype=complex)
+
+    if type(data) == dict:
+        for i, (ell,m) in enumerate([(ell,m) for ell in range(ell_min, ell_max+1) for m in range(-ell,ell+1)]):
+            if (ell,m) in data.keys():
+                formatted_data[:,i] = data[ell,m]
+
+    elif type(data) == np.ndarray:
+        assert data.shape == (len(times), n_modes(ell_max, ell_min)), "Data array is not the correct shape." 
+        formatted_data = data
+
+    # Convert to a WaveformModes object
+    h = scri.WaveformModes(
+        dataType = scri.h,
+        t = times,
+        data = formatted_data,
+        ell_min = ell_min,
+        ell_max = ell_max,
+        frameType = scri.Inertial,
+        r_is_scaled_out = True,
+        m_is_scaled_out = True,
+        )
+
+    return h
 
 
 def mismatch(times, wf_1, wf_2):
