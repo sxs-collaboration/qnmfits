@@ -134,7 +134,7 @@ class cce:
             dataType = scri.h,
             t = h.t,
             data = np.array(h)[:,h.index(abs(h.s),-abs(h.s)):],
-            ell_min =abs(h.s),
+            ell_min = abs(h.s),
             ell_max = h.ell_max,
             frameType = scri.Inertial,
             r_is_scaled_out = True,
@@ -144,7 +144,7 @@ class cce:
         return h_wm
 
 
-    def map_to_superrest(self, abd, window=True):
+    def map_to_superrest(self, abd, t0, window=True):
         """
         Map an AsymptoticBondiData object to the superrest frame.
 
@@ -152,6 +152,10 @@ class cce:
         ----------
         abd : AsymptoticBondiData
             The simulation data.
+
+        t0 : float
+            The time at which the superrest frame is defined. For ringdown
+            studies, about 300M after the time of peak strain is recommended.
 
         window : bool, optional
             Whether to window the data to speed up the transformation. Waveform
@@ -168,23 +172,37 @@ class cce:
 
         # Check if the transformation to the superrest frame has already been
         # done
-        wf_path = abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_superrest.pickle'
+        wf_path = abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t0}_superrest.pickle'
 
         if not wf_path.is_file():
 
-            # Convert to a WaveformModes object to find time of peak strain
-            h = self.abd_to_h(abd)
-        
-            # Shift the zero time to be at the peak of the strain
-            abd.t -= abd.t[np.argmax(h.norm())]
-
             # Window the data to speed up the transformation
             if window:
+
+                # Convert to a WaveformModes object to find time of peak strain
+                h = self.abd_to_h(abd)
+            
+                # Shift the zero time to be at the peak of the strain
+                time_shift = abd.t[np.argmax(h.norm())]
+                abd.t -= time_shift
+
+                # The scri interpolation removes the metadata and sim_dir
+                # attributes, so we need to store them temporarily
+                metadata = abd.metadata
+                sim_dir = abd.sim_dir
+
                 new_times = abd.t[abd.t > -100]
                 abd = abd.interpolate(new_times)
 
+                # Restore the metadata and sim_dir attributes
+                abd.metadata = metadata
+                abd.sim_dir = sim_dir
+
+                # Undo the time shift
+                abd.t += time_shift
+
             # Convert to the superrest frame
-            abd_prime, transformations = abd.map_to_superrest_frame(t_0=300)
+            abd_prime, transformations = abd.map_to_superrest_frame(t_0=t0)
 
             # Save to file
             with open(wf_path, 'wb') as f:
