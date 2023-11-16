@@ -5,8 +5,8 @@ import scri
 from scipy.optimize import minimize
 
 # Class to load QNM frequencies and mixing coefficients
-from .qnm import qnm
-qnm = qnm()
+import qnm_class
+qnm_ins = qnm_class.qnm_class()
 
 
 def n_modes(ell_max, ell_min=2):
@@ -259,7 +259,7 @@ def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=10
     # Frequencies
     # -----------
     
-    frequencies = np.array(qnm.omega_list(qnms, chif, Mf))
+    frequencies = np.array(qnm_ins.omega_list(qnms, chif, Mf))
         
     # Construct coefficient matrix and solve
     # --------------------------------------
@@ -335,7 +335,7 @@ def multimode_ringdown_fit(data, spherical_modes, qnms, Mf, chif, t0,
     # Frequencies
     # -----------
     
-    frequencies = np.array(qnm.omega_list(qnms, chif, Mf))
+    frequencies = np.array(qnm_ins.omega_list(qnms, chif, Mf))
     
     # Construct the coefficient matrix for use with NumPy's lstsq function. 
     

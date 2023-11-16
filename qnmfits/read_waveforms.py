@@ -6,6 +6,7 @@ import os
 import spherical_functions as sf
 import sxs
 import scri
+from scri.asymptotic_bondi_data.map_to_superrest_frame import MT_to_WM, map_to_superrest_frame
 import quaternion
 
 import numpy as np
@@ -13,57 +14,57 @@ from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
 from scri_qnm_modes import waveform_mismatch
 
-def MT_to_WM(h_mts, dataType=scri.h):
-    """Converts ModesTimeSeries object to a WaveformModes object.
+#def MT_to_WM(h_mts, dataType=scri.h):
+#   """Converts ModesTimeSeries object to a WaveformModes object.
+#
+#    Parameters
+#    ----------
+#    h_mts : ModesTimeSeries object
+#
+#    dataType : int, optional [Default: scri.h]
+#        `scri.dataType` appropriate for `data`
+#
+#    Returns
+#    _______
+#    h : WaveformModes
+#        Waveform object
+#    
+#    """
+#    h = scri.WaveformModes(t=h_mts.t,\
+#                           data=np.array(h_mts)[:,sf.LM_index(abs(h_mts.s),-abs(h_mts.s),0):],\
+#                           ell_min=abs(h_mts.s),\
+#                           ell_max=h_mts.ell_max,\
+#                           frameType=scri.Inertial,\
+#                           dataType=dataType
+#                          )
+#    h.r_is_scaled_out = True
+#    h.m_is_scaled_out = True
+#    return h
 
-    Parameters
-    ----------
-    h_mts : ModesTimeSeries object
-
-    dataType : int, optional [Default: scri.h]
-        `scri.dataType` appropriate for `data`
-
-    Returns
-    _______
-    h : WaveformModes
-        Waveform object
-    
-    """
-    h = scri.WaveformModes(t=h_mts.t,\
-                           data=np.array(h_mts)[:,sf.LM_index(abs(h_mts.s),-abs(h_mts.s),0):],\
-                           ell_min=abs(h_mts.s),\
-                           ell_max=h_mts.ell_max,\
-                           frameType=scri.Inertial,\
-                           dataType=dataType
-                          )
-    h.r_is_scaled_out = True
-    h.m_is_scaled_out = True
-    return h
-
-def WM_to_MT(h_wm):
-    """Converts a WaveformModes object to a ModesTimesSeries object.
-
-    Parameters
-    ----------
-    h_wm : WaveformModes
-        Waveform object
-
-    Returns
-    _______
-    h_mts : AsymptoticBondiData object
-    
-    """
-    h_mts = scri.ModesTimeSeries(
-        sf.SWSH_modes.Modes(
-            h_wm.data,
-            spin_weight=h_wm.spin_weight,
-            ell_min=h_wm.ell_min,
-            ell_max=h_wm.ell_max,
-            multiplication_truncator=max,
-        ),
-        time=h_wm.t,
-    )
-    return h_mts
+#def WM_to_MT(h_wm):
+#    """Converts a WaveformModes object to a ModesTimesSeries object.
+#
+#    Parameters
+#    ----------
+#    h_wm : WaveformModes
+#        Waveform object
+#
+#    Returns
+#    _______
+#    h_mts : AsymptoticBondiData object
+#    
+#    """
+#    h_mts = scri.ModesTimeSeries(
+#        sf.SWSH_modes.Modes(
+#            h_wm.data,
+#            spin_weight=h_wm.spin_weight,
+#            ell_min=h_wm.ell_min,
+#            ell_max=h_wm.ell_max,
+#            multiplication_truncator=max,
+#        ),
+#        time=h_wm.t,
+#    )
+#    return h_mts
 
 def n_modes(ell_max, ell_min=2):
     """
