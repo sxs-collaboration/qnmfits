@@ -1,5 +1,8 @@
+# Downloaded data
 qnmfits/data/SXS*
+qnmfits/data/KerrQNM*
 
+# macOS
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
