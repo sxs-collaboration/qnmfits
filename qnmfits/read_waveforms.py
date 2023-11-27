@@ -271,9 +271,6 @@ def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
             abd_superrest = pickle.load(f)
    
     h_superrest = MT_to_WM(2.0*abd_superrest.sigma.bar)
-  # if save:
-  #      scri.SpEC.file_io.write_to_h5(h_superrest, f"./BMS_data/h_{sim_name}_superrest.h5",
-  #                                    file_write_mode="w", attributes={}, use_NRAR_format=True)
     return abd_superrest, h_superrest 
 
 def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
