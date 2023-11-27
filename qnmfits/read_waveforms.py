@@ -13,7 +13,7 @@ import numpy as np
 import pickle
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
-from qnmfits_combined import waveform_mismatch
+from qnmfits import waveform_mismatch
 
 import cce
 cce = cce.cce()

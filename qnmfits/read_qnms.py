@@ -38,7 +38,7 @@ def qnm_from_tuple(tup, chi, M, s=-2):
     # Use separate data for this special mode.The QNM frequency and angular 
     # separation constants are provided.
     if (ell,m,n) == (2,2,8):
-        w228table = np.loadtxt(f'./data/w228table.dat')
+        w228table = np.loadtxt(f'../qnmfits/data/w228table.dat')
         spins, real_omega, imag_omega, real_A, imag_A = w228table.T
         omega = real_omega + 1j*imag_omega
         

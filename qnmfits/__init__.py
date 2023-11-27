@@ -3,5 +3,4 @@
 __version__ = "2023.0.0"
 
 from .cce import cce
-from .qnmfits_combined import qnmfits_combined
 from .qnmfits import qnmfits
