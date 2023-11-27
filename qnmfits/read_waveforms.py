@@ -6,64 +6,92 @@ import os
 import spherical_functions as sf
 import sxs
 import scri
+from scri.asymptotic_bondi_data.map_to_superrest_frame import MT_to_WM, map_to_superrest_frame
 import quaternion
 
 import numpy as np
+import pickle
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
-from scri_qnm_modes import waveform_mismatch
+from qnmfits_combined import waveform_mismatch
 
-def MT_to_WM(h_mts, dataType=scri.h):
-    """Converts ModesTimeSeries object to a WaveformModes object.
+import cce
+cce = cce.cce()
+
+def n_modes(ell_max, ell_min=2):
+    """
+    Calculates the number of spherical-harmonic modes between ell_min and
+    ell_max.
 
     Parameters
     ----------
-    h_mts : ModesTimeSeries object
+    ell_max : int
+        The maximum value of ell.
 
-    dataType : int, optional [Default: scri.h]
-        `scri.dataType` appropriate for `data`
+    ell_min : int, optional
+        The minimum value of ell. The default is 2.
 
     Returns
-    _______
-    h : WaveformModes
-        Waveform object
-    
+    -------
+    int
+        The number of spherical-harmonic modes between ell_min and ell_max.
     """
-    h = scri.WaveformModes(t=h_mts.t,\
-                           data=np.array(h_mts)[:,sf.LM_index(abs(h_mts.s),-abs(h_mts.s),0):],\
-                           ell_min=abs(h_mts.s),\
-                           ell_max=h_mts.ell_max,\
-                           frameType=scri.Inertial,\
-                           dataType=dataType
-                          )
-    h.r_is_scaled_out = True
-    h.m_is_scaled_out = True
+    return sum([2*ell+1 for ell in range(ell_min, ell_max+1)])
+
+def to_WaveformModes(times, data, ell_max, ell_min=2):
+    """
+    Convert a dictionary of spherical-harmonic modes or a NumPy array to a
+    WaveformModes object.
+
+    Parameters
+    ----------
+    times : array_like
+        The times at which the waveforms are evaluated.
+
+    data : dict or ndarray
+        The spherical-harmonic waveform modes to convert to a WaveformModes
+        object. If data is a dictionary, the keys are (ell,m) tuples and the
+        values are the waveform data. If data is a NumPy array, the columns
+        must correspond to the (ell,m) modes in the specific order required by
+        scri: see the scri.WaveformModes documentation for details.
+
+    ell_max : int
+        The maximum value of ell included in the data.
+
+    ell_min : int, optional
+        The minimum value of ell included in the data. The default is 2.
+
+    Returns
+    -------
+    h : WaveformModes
+        The spherical-harmonic waveform modes in the WaveformModes format.
+    """
+    # Ensure data is in the correct format
+    formatted_data = np.zeros((len(times), n_modes(ell_max, ell_min)), dtype=complex)
+
+    if type(data) == dict:
+        for i, (ell,m) in enumerate([(ell,m) for ell in range(ell_min, ell_max+1) for m in range(-ell,ell+1)]):
+            if (ell,m) in data.keys():
+                formatted_data[:,i] = data[ell,m]
+
+    elif type(data) == np.ndarray:
+        assert data.shape == (len(times), n_modes(ell_max, ell_min)), "Data array is not the correct shape."
+        formatted_data = data
+
+    # Convert to a WaveformModes object
+    h = scri.WaveformModes(
+        dataType = scri.h,
+        t = times,
+        data = formatted_data,
+        ell_min = ell_min,
+        ell_max = ell_max,
+        frameType = scri.Inertial,
+        r_is_scaled_out = True,
+        m_is_scaled_out = True,
+        )
+
     return h
 
-def WM_to_MT(h_wm):
-    """Converts a WaveformModes object to a ModesTimesSeries object.
-
-    Parameters
-    ----------
-    h_wm : WaveformModes
-        Waveform object
-
-    Returns
-    _______
-    h_mts : AsymptoticBondiData object
-    
-    """
-    h_mts = scri.ModesTimeSeries(
-        sf.SWSH_modes.Modes(
-            h_wm.data,
-            spin_weight=h_wm.spin_weight,
-            ell_min=h_wm.ell_min,
-            ell_max=h_wm.ell_max,
-            multiplication_truncator=max,
-        ),
-        time=h_wm.t,
-    )
-    return h_mts
 
 def get_CCE_radii(simulation_dir, radius_index = None):
     """Returns CCE radii of a simulation.
@@ -88,6 +116,7 @@ def get_CCE_radii(simulation_dir, radius_index = None):
         return radii[radius_index:radius_index+1]
     else:
         return radii
+
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
         sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
     """Returns metadata structure, WaveformModes object, and sxs_id
@@ -122,7 +151,7 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     md : Metadata
 
     W : WaveformModes
-        Waveform object
+        Waveform object with peak at t=0M.
 
     sxs_id : string
         Name of this simulation
@@ -149,7 +178,7 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     W.t = W.t - W.t[trim_ind]
     return md, W, sxs_id
 
-def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
+def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     """Returns an AsymptoticBondiData object and WaveformModes object. 
 
     Paremeters
@@ -157,9 +186,13 @@ def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
     cce_dir : str
         Directory where specific CCE waveform data is located
 
-    end_string: str, optional [Default: '_CoM_Bondi']
-        End string of the CCE waveform data
+    file_format: str, optional [Default: 'SXS']
+        'SXS' for data stored in .h5 format and 'RPXMB' for data store in both
+        .h5 and .json formats.
 
+    Example:
+    load_CCENR_data("/Users/Username/Simulations/CCE_XXXX/LevX")
+    
     Returns
     -------
     abd_CCE : AsymptoticBondiData
@@ -168,20 +201,80 @@ def load_CCENR_data(cce_dir, end_string='_CoM_Bondi'):
         Waveform object with peak at t=0M
 
     """
-    radius = get_CCE_radii(cce_dir)[0]
-    abd_CCE = scri.SpEC.file_io.create_abd_from_h5(\
-                        h = f'{cce_dir}rhOverM_BondiCce_R{radius}{end_string}.h5',
-                        Psi4 = f'{cce_dir}rMPsi4_BondiCce_R{radius}{end_string}.h5',
-                        Psi3 = f'{cce_dir}r2Psi3_BondiCce_R{radius}{end_string}.h5',
-                        Psi2 = f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}{end_string}.h5',
-                        Psi1 = f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}{end_string}.h5',
-                        Psi0 = f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}{end_string}.h5',
-                        file_format = 'SXS')
-    h_CCE = MT_to_WM(2.0*abd_CCE.sigma.bar)
+    if use_sxs == False and cce_dir == None:
+        raise TypeError('Set use_sxs=True or give directory name to'\
+                ' the waveform data')
+    if use_sxs == False: 
+        radius = get_CCE_radii(cce_dir)[0]
+        abd_CCE = scri.SpEC.file_io.create_abd_from_h5(\
+                        h = f'{cce_dir}rhOverM_BondiCce_R{radius}_CoM.h5',
+                        Psi4 = f'{cce_dir}rMPsi4_BondiCce_R{radius}_CoM.h5',
+                        Psi3 = f'{cce_dir}r2Psi3_BondiCce_R{radius}_CoM.h5',
+                        Psi2 = f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}_CoM.h5',
+                        Psi1 = f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}_CoM.h5',
+                        Psi0 = f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}_CoM.h5',
+                        file_format = file_format)
+        h_CCE = MT_to_WM(2.0*abd_CCE.sigma.bar)
+    else:
+        abd_CCE = cce.load(N_sim)
+        h_CCE = MT_to_WM(2*abd_CCE.sigma.bar)
+
     trim_ind = h_CCE.max_norm_index()
     h_CCE.t -= h_CCE.t[trim_ind]
     return abd_CCE, h_CCE
 
+def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
+                       sim_name=None):
+    """Maps waveform into the BMS superrest frame of the remnant black hole.
+
+    Parameters
+    ----------
+    abd_CCE : AsymptoticBondiData
+
+    t_0 : float, optional [Default: 350.]
+        Time to map to the superrest frame of the remnant black hole. For ringdown
+        studies, about 300M after the time of peak strain is recommended.
+
+    padding_time : float, optional [Default: 100.]
+        Amount by which to pad around t_0 to speed up computations.
+
+   save : bool, optional [Default: False]
+        If True, the supertranslated waveform will be saved in a directory
+        called 'BMS_data'.
+
+    sim_name : str, optional [Default: None]
+        Use if saving the waveform. Format is h_{sim_name}_superrest.h5
+
+    Returns
+    -------
+    h_superrest : WaveformModes
+        WaveformModes object in the BMS superrest frame
+
+    """
+
+    # The extraction radius of the simulation
+    R = int(abd_CCE.metadata['preferred_R'])
+
+    # Check if the transformation to the superrest frame has already been done
+    wf_path = abd_CCE.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t_0}_superrest.pickle'
+
+    if not wf_path.is_file():
+        abd_superrest, transformations = map_to_superrest_frame(abd_CCE, t_0=t_0,
+                                                        padding_time=padding_time)
+        # Save to file
+        with open(wf_path, 'wb') as f:
+            pickle.dump(abd_superrest, f)
+
+    # Load from file
+    else: 
+        with open(wf_path, 'rb') as f:
+            abd_superrest = pickle.load(f)
+   
+    h_superrest = MT_to_WM(2.0*abd_superrest.sigma.bar)
+  # if save:
+  #      scri.SpEC.file_io.write_to_h5(h_superrest, f"./BMS_data/h_{sim_name}_superrest.h5",
+  #                                    file_write_mode="w", attributes={}, use_NRAR_format=True)
+    return abd_superrest, h_superrest 
 
 def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
     '''Waveforms are assumed to have z-axis aligned by final spin or something else, 

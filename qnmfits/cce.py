@@ -110,89 +110,64 @@ class cce:
         abd.metadata = metadata
 
         return abd
-    
 
-    def abd_to_h(self, abd):
-        """
-        Convert an AsymptoticBondiData object to a WaveformModes object.
-        
-        Parameters
-        ----------
-        abd : AsymptoticBondiData
-            The simulation data.
-        
-        Returns
-        -------
-        h_wm : WaveformModes
-            The simulation data in the WaveformModes format.
-        """
-        # The strain is related to the shear in the following way
-        h = 2*abd.sigma.bar
+#    def map_to_superrest(self, abd, t0, window=True):
+#        """
+#        Map an AsymptoticBondiData object to the superrest frame.
+#
+#        Parameters
+#        ----------
+#        abd : AsymptoticBondiData
+#            The simulation data.
+#
+#         t0 : float
+#             The time at which the superrest frame is defined. For ringdown
+#             studies, about 300M after the time of peak strain is recommended.
+#
+#        window : bool, optional
+#            Whether to window the data to speed up the transformation. Waveform
+#            data 100M before the peak of the strain is removed. Default is 
+#            True.
 
-        # Convert to a WaveformModes object
-        h_wm = scri.WaveformModes(
-            dataType = scri.h,
-            t = h.t,
-            data = np.array(h)[:,h.index(abs(h.s),-abs(h.s)):],
-            ell_min = abs(h.s),
-            ell_max = h.ell_max,
-            frameType = scri.Inertial,
-            r_is_scaled_out = True,
-            m_is_scaled_out = True,
-        )
+#        Returns
+#        -------
+#        abd_prime : AsymptoticBondiData
+#            The simulation data in the superrest frame.
+#        """
 
-        return h_wm
-
-
-    def map_to_superrest(self, abd, t0, window=True):
-        """
-        Map an AsymptoticBondiData object to the superrest frame.
-
-        Parameters
-        ----------
-        abd : AsymptoticBondiData
-            The simulation data.
-
-        t0 : float
-            The time at which the superrest frame is defined. For ringdown
-            studies, about 300M after the time of peak strain is recommended.
-
-        window : bool, optional
-            Whether to window the data to speed up the transformation. Waveform
-            data 100M before the peak of the strain is removed. Default is 
-            True.
-
-        Returns
-        -------
-        abd_prime : AsymptoticBondiData
-            The simulation data in the superrest frame.
-        """
         # The extraction radius of the simulation
-        R = int(abd.metadata['preferred_R'])
-
+#        R = int(abd.metadata['preferred_R'])
+#
         # Check if the transformation to the superrest frame has already been
         # done
-        wf_path = abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t0}_superrest.pickle'
-
-        if not wf_path.is_file():
-
+#        wf_path = abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t0}_superrest.pickle'
+#
+#        if not wf_path.is_file():
+#
             # Window the data to speed up the transformation
-            if window:
-
+#            if window:
+#
                 # Convert to a WaveformModes object to find time of peak strain
-                h = self.abd_to_h(abd)
-            
+#                h = self.abd_to_h(abd)
+
                 # Shift the zero time to be at the peak of the strain
-                time_shift = abd.t[np.argmax(h.norm())]
-                abd.t -= time_shift
+#                time_shift = abd.t[np.argmax(h.norm())]
+#                abd.t -= time_shift
 
                 # The scri interpolation removes the metadata and sim_dir
                 # attributes, so we need to store them temporarily
-                metadata = abd.metadata
-                sim_dir = abd.sim_dir
+#                metadata = abd.metadata
+#                sim_dir = abd.sim_dir
 
-                new_times = abd.t[abd.t > -100]
-                abd = abd.interpolate(new_times)
+#                new_times = abd.t[abd.t > -100]
+#                abd = abd.interpolate(new_times)
+
+                # Restore the metadata and sim_dir attributes
+#                abd.metadata = metadata
+#                abd.sim_dir = sim_dir
+
+                # Undo the time shift
+#                abd.t += time_shift
 
                 # Restore the metadata and sim_dir attributes
                 abd.metadata = metadata
@@ -202,14 +177,14 @@ class cce:
                 abd.t += time_shift
 
             # Convert to the superrest frame
-            abd_prime, transformations = abd.map_to_superrest_frame(t_0=t0)
+#            abd_prime, transformations = abd.map_to_superrest_frame(t_0=t0)
 
             # Save to file
-            with open(wf_path, 'wb') as f:
-                pickle.dump(abd_prime, f)
+#            with open(wf_path, 'wb') as f:
+#                pickle.dump(abd_prime, f)
 
         # Load from file
-        with open(wf_path, 'rb') as f:
-            abd_prime = pickle.load(f)
+#        with open(wf_path, 'rb') as f:
+#            abd_prime = pickle.load(f)
 
-        return abd_prime
+#        return abd_prime

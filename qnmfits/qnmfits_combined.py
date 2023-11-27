@@ -15,32 +15,32 @@ from quaternion.calculus import indefinite_integral as integrate
 _ksc = qnm.modes_cache
 def qnm_from_tuple(tup, chi, M, s=-2):
     '''Get frequency and spherical_spheroidal mixing from qnm module
-    
+
     Parameters
     ----------
-    tup : tuple 
+    tup : tuple
         Index (ell,m,n,sign) of QNM
-    
+
     chi : float
         The dimensionless spin of the black hole, 0. <= chi < 1.
-    
+
     M : float
         The mass of the black hole, M > 0.
-    
+
     s : int, optional [Default: -2]
-    
+
     Returns
     -------
     omega: complex
         Frequency of QNM. This frequency is the same units as arguments,
         as opposed to being in units of remnant mass.
-    
+
     C : complex ndarray
         Spherical-spheroidal decomposition coefficient array
-    
-    ells : ndarray 
+
+    ells : ndarray
         List of ell values for the spherical-spheroidal mixing array
-   
+
     '''
     ell, m, n, sign = tup
     if (sign == +1):
@@ -66,7 +66,8 @@ def qnm_from_tuple(tup, chi, M, s=-2):
     # Convert from M*\omega to \omega
     omega = Momega/M
     return omega, C, ells
-         
+
+
 def qnm_modes(chi, M, mode_dict, dest=None,
               t_0=0., t_ref=0.,
               **kwargs):
@@ -186,6 +187,42 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None,
                      t=t, ell_min=ell_min, ell_max=ell_max,
                      **kwargs)
 
+def waveform_mismatch(h_A, h_B, modes=None):
+    """ Returns the mismatch between two waveforms at given spherical harmonics
+    or over all modes.
+    
+    Parameters
+    ----------
+    h_A : WaveformModes
+
+    h_B : WaveformModes
+
+    modes : list, optional [Default: None]
+        List of (l,m) modes to compute mismathch over. If None, mismatch is
+        calculated over all modes in the WaveformModes object.
+
+    Returns
+    -------
+    mismatch : float
+
+    """
+
+    h_A = h_A.copy()
+    h_B = h_B.copy()
+    if not modes is None:
+        for L in range(h_A.ell_min, h_A.ell_max + 1):
+            for M in range(-L, L + 1):
+                if not (L, M) in modes:
+                    h_A.data[:, sf.LM_index(L, M, h_A.ell_min)] *= 0
+                    h_B.data[:, sf.LM_index(L, M, h_B.ell_min)] *= 0
+
+        h_A_h_B_inner_product = np.real(integrate(np.sum(h_A.data * np.conjugate(h_B.data), -1), h_A.t)[-1])
+        h_A_norm = integrate(np.sum(h_A.data * np.conjugate(h_A.data),-1), h_A.t)[-1].real
+        h_B_norm = integrate(np.sum(h_B.data * np.conjugate(h_B.data),-1), h_B.t)[-1].real
+        return 1 - h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm)
+    else:
+        return 1 - np.real(h_A.inner_product(h_B, t1=0.) / np.sqrt(h_A.inner_product(h_A, t1=0.) * h_B.inner_product(h_B, t1=0.)))
+    
 def mode_power_order(W, topN=10, t_0=-np.Inf):
     """Return a list of topN of W's mode indices, sorted by power per mode
 
@@ -205,20 +242,6 @@ def mode_power_order(W, topN=10, t_0=-np.Inf):
     """
     sliced = W.data[W.t > t_0, :]
     return W.LM[np.argsort(np.sum(np.square(np.abs(sliced)),axis=0))][-1:-1-topN:-1]
-
-def waveform_mismatch(h_A, h_B, t_0, mode=None):
-    if mode != None:
-        L = mode[0]; M = mode[1];
-        t_0_idx = np.argmin(abs(h_A.t - t_0))
-        h_A_h_B_inner_product = integrate(h_A.data[t_0_idx:,sf.LM_index(L, M, h_A.ell_min)] *
-                                          np.conjugate(h_B.data[t_0_idx:,sf.LM_index(L, M, h_B.ell_min)]), h_A.t[t_0_idx:])[-1]
-        h_A_norm = integrate(h_A.data[t_0_idx:,sf.LM_index(L, M, h_A.ell_min)] *
-                             np.conjugate(h_A.data[t_0_idx:,sf.LM_index(L, M, h_A.ell_min)]), h_A.t[t_0_idx:])[-1]
-        h_B_norm = integrate(h_B.data[t_0_idx:,sf.LM_index(L, M, h_B.ell_min)] *
-                             np.conjugate(h_B.data[t_0_idx:,sf.LM_index(L, M, h_B.ell_min)]), h_B.t[t_0_idx:])[-1]
-        return 1 - np.real(h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm))
-    else:
-        return 1 - np.real(h_A.inner_product(h_B, t1=t_0) / np.sqrt(h_A.inner_product(h_A, t1=t_0) * h_B.inner_product(h_B, t1=t_0)))
 
 def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     """
