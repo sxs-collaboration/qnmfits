@@ -110,7 +110,7 @@ class cce:
         abd.metadata = metadata
 
         return abd
-    
+
 #    def map_to_superrest(self, abd, t0, window=True):
 #        """
 #        Map an AsymptoticBondiData object to the superrest frame.
@@ -134,6 +134,7 @@ class cce:
 #        abd_prime : AsymptoticBondiData
 #            The simulation data in the superrest frame.
 #        """
+
         # The extraction radius of the simulation
 #        R = int(abd.metadata['preferred_R'])
 #
@@ -167,6 +168,13 @@ class cce:
 
                 # Undo the time shift
 #                abd.t += time_shift
+
+                # Restore the metadata and sim_dir attributes
+                abd.metadata = metadata
+                abd.sim_dir = sim_dir
+
+                # Undo the time shift
+                abd.t += time_shift
 
             # Convert to the superrest frame
 #            abd_prime, transformations = abd.map_to_superrest_frame(t_0=t0)
