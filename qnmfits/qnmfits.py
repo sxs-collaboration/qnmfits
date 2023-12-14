@@ -1,17 +1,203 @@
-import qnm
-import quaternion
-import scri
+import numpy as np
 import spherical_functions as sf
 
-import numpy as np
+import scri
+
 from scipy.optimize import minimize
-from scipy.optimize import curve_fit
-
 from scri.sample_waveforms import modes_constructor
-from scri import WaveformModes
 from quaternion.calculus import indefinite_integral as integrate
-from read_qnms import qnm_from_tuple
 
+from .read_qnms import qnm_from_tuple
+
+def mismatch(h_A, h_B, t0, T, spherical_modes=None):
+    """
+    Returns the mismatch between two waveforms over the given spherical 
+    harmonics, or over all modes.
+    
+    Parameters
+    ----------
+    h_A, h_B : WaveformModes
+        The two waveforms to calculate the mismatch between.
+
+    spherical_modes : array_like, optional
+        A sequence of (l,m) tuples to compute mismatch over. If None, the 
+        mismatch is calculated over all modes in the WaveformModes object.
+
+    Returns
+    -------
+    mismatch : float
+        The mismatch between the two waveforms.
+    """
+
+    if spherical_modes is None:
+        numerator = np.real(h_A.inner_product(h_B, t1=t0, t2=T))
+        denominator = np.sqrt(np.real(
+            h_A.inner_product(h_A, t1=t0, t2=T)*h_B.inner_product(h_B, t1=t0, t2=T)
+            ))
+        return 1 - numerator/denominator
+
+    else:
+
+        h_A = h_A.copy()
+        h_B = h_B.copy()
+
+        for L in range(h_A.ell_min, h_A.ell_max + 1):
+            for M in range(-L, L + 1):
+                if not (L, M) in modes:
+                    h_A.data[:, sf.LM_index(L, M, h_A.ell_min)] *= 0
+                    h_B.data[:, sf.LM_index(L, M, h_B.ell_min)] *= 0
+
+        h_A_h_B_inner_product = np.real(integrate(np.sum(h_A.data * np.conjugate(h_B.data), -1), h_A.t)[-1])
+        h_A_norm = integrate(np.sum(h_A.data * np.conjugate(h_A.data),-1), h_A.t)[-1].real
+        h_B_norm = integrate(np.sum(h_B.data * np.conjugate(h_B.data),-1), h_B.t)[-1].real
+        return 1 - h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm)
+        
+
+def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=100):
+    """
+    Perform a least-squares fit to some data using a ringdown model.
+    
+    Parameters
+    ----------
+    data : WaveformModes
+        The data to be fitted by the ringdown model.
+    
+    spherical_mode : tuple
+        The (l,m) mode to fit with the ringdown model.
+        
+    qnms : array_like
+        A sequence of (l,m,n,sign) tuples to specify which QNMs to include in 
+        the ringdown model. For regular (positive real part) modes use 
+        sign=+1. For mirror (negative real part) modes use sign=-1. For 
+        nonlinear modes, the tuple has the form 
+        (l1,m1,n1,sign1,l2,m2,n2,sign2,...).
+        
+    Mf : float
+        The remnant black hole mass, which along with chif determines the QNM
+        frequencies.
+        
+    chif : float
+        The magnitude of the remnant black hole spin.
+        
+    t0 : float
+        The start time of the ringdown model.
+        
+    t0_method : str, optional
+        A requested ringdown start time will in general lie between times on
+        the default time array (the same is true for the end time of the
+        analysis). There are different approaches to deal with this, which can
+        be specified here.
+        
+        Options are:
+            
+            - 'geq'
+                Take data at times greater than or equal to t0. Note that
+                we still treat the ringdown start time as occuring at t0,
+                so the best fit coefficients are defined with respect to 
+                t0.
+            - 'closest'
+                Identify the data point occuring at a time closest to t0, 
+                and take times from there.
+                
+        The default is 'geq'.
+        
+    T : float, optional
+        The duration of the data to analyse, such that the end time is t0 + T. 
+        The default is 100.
+        
+    Returns
+    -------
+    best_fit : dict
+        A dictionary of useful information related to the fit. Keys include:
+            
+            - 'residual' : float
+                The residual from the fit.
+            - 'mismatch' : float
+                The mismatch between the best-fit waveform and the data.
+            - 'C' : ndarray
+                The best-fit complex amplitudes. There is a complex amplitude 
+                for each ringdown mode.
+            - 'frequencies' : ndarray
+                The values of the complex frequencies for all the ringdown 
+                modes.
+            - 'data' : ndarray
+                The (masked) data used in the fit.
+            - 'model': ndarray
+                The best-fit model waveform.
+            - 'times' : ndarray
+                The times at which the data and model are evaluated.
+            - 't0' : float
+                The ringdown start time used in the fit.
+            - 'modes' : ndarray
+                The ringdown modes used in the fit.
+    """
+    # Get the data array we want to fit to
+    times = data.t
+    data = data.data[:, data.index(*spherical_mode)]
+    
+    # Mask the data with the requested method
+    if t0_method == 'geq':
+        
+        data_mask = (times>=t0) & (times<t0+T)
+        
+        times = times[data_mask]
+        data = data[data_mask]
+        
+    elif t0_method == 'closest':
+        
+        start_index = np.argmin((times-t0)**2)
+        end_index = np.argmin((times-t0-T)**2)
+        
+        times = times[start_index:end_index]
+        data = data[start_index:end_index]
+        
+    else:
+        print("""Requested t0_method is not valid. Please choose between 'geq'
+              and 'closest'""")
+    
+    # Frequencies
+    # -----------
+    
+    frequencies = np.array(qnm.omega_list(qnms, chif, Mf))
+        
+    # Construct coefficient matrix and solve
+    # --------------------------------------
+    
+    # Construct the coefficient matrix
+    a = np.array([
+        np.exp(-1j*frequencies[i]*(times-t0)) for i in range(len(frequencies))
+        ]).T
+
+    # Solve for the complex amplitudes, C. Also returns the sum of residuals,
+    # the rank of a, and singular values of a.
+    C, res, rank, s = np.linalg.lstsq(a, data, rcond=None)
+    
+    # Evaluate the model
+    model = np.einsum('ij,j->i', a, C)
+    
+    # Calculate the mismatch for the fit
+    mm = mismatch(times, model, data)
+    
+    # Store all useful information to a output dictionary
+    best_fit = {
+        'residual': res,
+        'mismatch': mm,
+        'C': C,
+        'frequencies': frequencies,
+        'data': data,
+        'model': model,
+        'times': times,
+        't0': t0,
+        }
+    
+    # Return the output dictionary
+    return best_fit
+
+
+
+
+# Lorena fitting functions
+# ------------------------
 
 def qnm_modes(chi, M, mode_dict, dest=None,
               t_0=0., t_ref=0.,
@@ -131,42 +317,133 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None,
                      t_0=t_0, t_ref=t_ref,
                      t=t, ell_min=ell_min, ell_max=ell_max,
                      **kwargs)
-
-def waveform_mismatch(h_A, h_B, modes=None):
-    """ Returns the mismatch between two waveforms at given spherical harmonics
-    or over all modes.
+    
+def fit_W_modes(W, chi, M, mode_labels,
+                t_0=0., t_ref=0.):
+    """Uses a modification of the mode limited eigenvalue method from 
+    arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
+    
+    We modify the procedure by restricting the minimization of the mismatch
+    only over modes that we care about. These modes are selected as follows:
+    for every m, in mode_labels we find the maximum ell for which 
+    some (ell, m, n , s) is in mode labels. This sets the ell_max for 
+    that m. We don't consider modes with higher ell's in the mismatch
+    to minimize. We are not trying to model these high-ell spherical modes, 
+    so how well the low-ell qnm modes fit these high-ell modes through
+    (spherical-spheroidal mixing) should not be part of the equation.
+    Thus we project them out of the NR data and QNM modes.
     
     Parameters
     ----------
-    h_A : WaveformModes
-
-    h_B : WaveformModes
-
-    modes : list, optional [Default: None]
-        List of (l,m) modes to compute mismathch over. If None, mismatch is
-        calculated over all modes in the WaveformModes object.
-
+    W : WaveformModes
+    chi : float
+    M : float
+    mode_labels : list
+        list of tuples (l,m,n,sign).
+        None will be used for no initial guess.
+    t_0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t_0.
+    t_ref : float, optional [Default: 0.]
+        Time at which amplitudes are specified.
     Returns
     -------
-    mismatch : float
+    res_mode_dict : dict
+    """
+    
+    res_mode_dict = {}
+    for mode in mode_labels:
+        res_mode_dict[mode] = None
+    
+    m_list = []
+    [m_list.append(m) for (_, m,_,_) in mode_labels if m not in m_list]
+    # Break problem into one m at a time. The m's are decoupled, and the truncation
+    # in ell for each m is different.
+    for m in m_list:
+        mode_labels_m = [label for label in mode_labels if label[1]==m]
+        ell_max_m = max([l for l,_,_,_ in mode_labels_m])  # Truncate all modes above ell_max_m for this m
+        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in range(2, ell_max_m+1)]
+        
+        A = np.zeros((len(W.t),ell_max_m-1), dtype=complex) # Data overlap with qnm modes
+        B = np.zeros((len(W.t),ell_max_m-1, len(mode_labels_m)), dtype=complex)
+        
+        W_trunc = W[:,:ell_max_m+1]
+        A = W_trunc.data[:, data_index_m]
+        for mode_index, label in enumerate(mode_labels_m):
+            tmp_mode_dict = {label: 1.}
+            Q = qnm_modes_as(chi, M, tmp_mode_dict, W_trunc, 
+                             t_0=t_0, t_ref=t_ref)
+            B[:,:,mode_index] = Q.data[:,data_index_m]
 
+        A = np.reshape(A, len(W.t)*(ell_max_m-1))
+        B = np.reshape(B, (len(W.t)*(ell_max_m-1), len(mode_labels_m)))
+        C = np.linalg.lstsq(B, A, rcond=None)
+        for i, label in enumerate(mode_labels_m):
+            res_mode_dict[label] = C[0][i]
+        
+    return res_mode_dict
+
+def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400, 
+                        xtol=1e-4, ftol=1e-4):
+    
+    """Use scipy.optimize.minimize to find best fit spin, mass, and qnm amplitudes to a waveform
+    Parameters
+    ----------
+    W : WaveformModes
+    mode_labels : list of tuples
+    t_0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t_0.
+    t_ref : float, optional [Default: 0.]
+        Time at which amplitudes are specified.
+    Returns
+    -------
+    chi : double
+    M : double
+    res_mode_dict : dict
+    res : scipy.optimize.OptimizeResult
     """
 
-    h_A = h_A.copy()
-    h_B = h_B.copy()
-    if not modes is None:
-        for L in range(h_A.ell_min, h_A.ell_max + 1):
-            for M in range(-L, L + 1):
-                if not (L, M) in modes:
-                    h_A.data[:, sf.LM_index(L, M, h_A.ell_min)] *= 0
-                    h_B.data[:, sf.LM_index(L, M, h_B.ell_min)] *= 0
+    dest_Q = np.zeros(W.data.shape, dtype=complex)
+    dest_diff = np.zeros(W.data.shape, dtype=complex)
 
-        h_A_h_B_inner_product = np.real(integrate(np.sum(h_A.data * np.conjugate(h_B.data), -1), h_A.t)[-1])
-        h_A_norm = integrate(np.sum(h_A.data * np.conjugate(h_A.data),-1), h_A.t)[-1].real
-        h_B_norm = integrate(np.sum(h_B.data * np.conjugate(h_B.data),-1), h_B.t)[-1].real
-        return 1 - h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm)
+    W_fitted_modes = W.copy()
+    W_fitted_modes.data *= 0.
+    for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
+        W_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W_fitted_modes.ell_min)] = W.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W.ell_min)]
+    
+    def goodness(chi_M, *args):
+        chi = chi_M[0]
+        M = chi_M[1]
+        if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
+            return 1e6
+        mode_dict = fit_W_modes(W_fitted_modes, chi, M, mode_labels,
+                t_0=t_0, t_ref=t_ref)
+        Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
+        Q_fitted_modes = Q.copy()
+        Q_fitted_modes.data *= 0.
+        for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
+            Q_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q_fitted_modes.ell_min)] = Q.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q.ell_min)]
+        diff = W_fitted_modes.copy()
+        diff.data -= Q_fitted_modes.data
+        return integrate(diff.norm(), diff.t)[-1]
+
+    x0 = [.7, .95]
+
+    bnds = [(0., .999), (.7, 1.)]
+    bnds = tuple(bnds)
+
+    res = minimize(goodness, x0,  method='Nelder-Mead', bounds=bnds, options={'maxiter': maxiter, 'maxfev': maxiter, 'xatol': xtol, 'fatol': ftol})
+    if (res.success):
+        chi = res.x[0]
+        M = res.x[1]
+        res_mode_dict = fit_W_modes(W, chi, M, mode_labels,
+                                    t_0=t_0, t_ref=t_ref)
+        return chi, M, res_mode_dict, res
     else:
-        return 1 - np.real(h_A.inner_product(h_B, t1=0.) / np.sqrt(h_A.inner_product(h_A, t1=0.) * h_B.inner_product(h_B, t1=0.)))
+        print(res)
+        return None, None, None, res
+
+# Greedy-fit functions
+# --------------------
     
 def mode_power_order(W, topN=10, t_0=-np.Inf):
     """Return a list of topN of W's mode indices, sorted by power per mode
@@ -238,7 +515,7 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
         elif new_n > n_max and (loudest_l, loudest_m) == (loudest_lms[-1][0], loudest_lms[-1][1]):
             print("Cannot find a valid mode to add.")
     return new_modes
-  
+
 def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
                       nmodes_to_report=None, initial_modes_dict={}, t_0=0.,
                       t_ref=0., n_max=7, interpolate=True, use_news_power=True,
@@ -393,127 +670,3 @@ def pick_modes_greedy(W, chi, M, target_frac, num_modes_max,
                                                     use_news_power=use_news_power,
                                                     retrograde=retrograde)
     return mode_dict[0], Q, diff, power[0], mismatch[0]
-
-def fit_W_modes(W, chi, M, mode_labels,
-                t_0=0., t_ref=0.):
-    """Uses a modification of the mode limited eigenvalue method from 
-    arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
-    
-    We modify the procedure by restricting the minimization of the mismatch
-    only over modes that we care about. These modes are selected as follows:
-    for every m, in mode_labels we find the maximum ell for which 
-    some (ell, m, n , s) is in mode labels. This sets the ell_max for 
-    that m. We don't consider modes with higher ell's in the mismatch
-    to minimize. We are not trying to model these high-ell spherical modes, 
-    so how well the low-ell qnm modes fit these high-ell modes through
-    (spherical-spheroidal mixing) should not be part of the equation.
-    Thus we project them out of the NR data and QNM modes.
-    
-    Parameters
-    ----------
-    W : WaveformModes
-    chi : float
-    M : float
-    mode_labels : list
-        list of tuples (l,m,n,sign).
-        None will be used for no initial guess.
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-    Returns
-    -------
-    res_mode_dict : dict
-    """
-    
-    res_mode_dict = {}
-    for mode in mode_labels:
-        res_mode_dict[mode] = None
-    
-    m_list = []
-    [m_list.append(m) for (_, m,_,_) in mode_labels if m not in m_list]
-    # Break problem into one m at a time. The m's are decoupled, and the truncation
-    # in ell for each m is different.
-    for m in m_list:
-        mode_labels_m = [label for label in mode_labels if label[1]==m]
-        ell_max_m = max([l for l,_,_,_ in mode_labels_m])  # Truncate all modes above ell_max_m for this m
-        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in range(2, ell_max_m+1)]
-        
-        A = np.zeros((len(W.t),ell_max_m-1), dtype=complex) # Data overlap with qnm modes
-        B = np.zeros((len(W.t),ell_max_m-1, len(mode_labels_m)), dtype=complex)
-        
-        W_trunc = W[:,:ell_max_m+1]
-        A = W_trunc.data[:, data_index_m]
-        for mode_index, label in enumerate(mode_labels_m):
-            tmp_mode_dict = {label: 1.}
-            Q = qnm_modes_as(chi, M, tmp_mode_dict, W_trunc, 
-                             t_0=t_0, t_ref=t_ref)
-            B[:,:,mode_index] = Q.data[:,data_index_m]
-
-        A = np.reshape(A, len(W.t)*(ell_max_m-1))
-        B = np.reshape(B, (len(W.t)*(ell_max_m-1), len(mode_labels_m)))
-        C = np.linalg.lstsq(B, A, rcond=None)
-        for i, label in enumerate(mode_labels_m):
-            res_mode_dict[label] = C[0][i]
-        
-    return res_mode_dict
-
-def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400, 
-                        xtol=1e-4, ftol=1e-4):
-    
-    """Use scipy.optimize.minimize to find best fit spin, mass, and qnm amplitudes to a waveform
-    Parameters
-    ----------
-    W : WaveformModes
-    mode_labels : list of tuples
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-    Returns
-    -------
-    chi : double
-    M : double
-    res_mode_dict : dict
-    res : scipy.optimize.OptimizeResult
-    """
-
-    dest_Q = np.zeros(W.data.shape, dtype=complex)
-    dest_diff = np.zeros(W.data.shape, dtype=complex)
-
-    W_fitted_modes = W.copy()
-    W_fitted_modes.data *= 0.
-    for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
-        W_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W_fitted_modes.ell_min)] = W.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W.ell_min)]
-    
-    def goodness(chi_M, *args):
-        chi = chi_M[0]
-        M = chi_M[1]
-        if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
-            return 1e6
-        mode_dict = fit_W_modes(W_fitted_modes, chi, M, mode_labels,
-                t_0=t_0, t_ref=t_ref)
-        Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
-        Q_fitted_modes = Q.copy()
-        Q_fitted_modes.data *= 0.
-        for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
-            Q_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q_fitted_modes.ell_min)] = Q.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q.ell_min)]
-        diff = W_fitted_modes.copy()
-        diff.data -= Q_fitted_modes.data
-        return integrate(diff.norm(), diff.t)[-1]
-
-    x0 = [.7, .95]
-
-    bnds = [(0., .999), (.7, 1.)]
-    bnds = tuple(bnds)
-
-    res = minimize(goodness, x0,  method='Nelder-Mead', bounds=bnds, options={'maxiter': maxiter, 'maxfev': maxiter, 'xatol': xtol, 'fatol': ftol})
-    if (res.success):
-        chi = res.x[0]
-        M = res.x[1]
-        res_mode_dict = fit_W_modes(W, chi, M, mode_labels,
-                                    t_0=t_0, t_ref=t_ref)
-        return chi, M, res_mode_dict, res
-    else:
-        print(res)
-        return None, None, None, res
