@@ -19,6 +19,13 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
     h_A, h_B : WaveformModes
         The two waveforms to calculate the mismatch between.
 
+    t0 : float
+        The start time of the mismatch calculation.
+
+    T : float
+        The duration of the mismatch calculation, such that the end time of the
+        mismatch integral is t0 + T. 
+
     spherical_modes : array_like, optional
         A sequence of (l,m) tuples to compute mismatch over. If None, the 
         mismatch is calculated over all modes in the WaveformModes object.
@@ -30,10 +37,13 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
     """
 
     if spherical_modes is None:
-        numerator = np.real(h_A.inner_product(h_B, t1=t0, t2=T))
+
+        numerator = np.real(h_A.inner_product(h_B, t1=t0, t2=t0+T))
+
         denominator = np.sqrt(np.real(
-            h_A.inner_product(h_A, t1=t0, t2=T)*h_B.inner_product(h_B, t1=t0, t2=T)
+            h_A.inner_product(h_A, t1=t0, t2=T)*h_B.inner_product(h_B, t1=t0, t2=t0+T)
             ))
+        
         return 1 - numerator/denominator
 
     else:
@@ -41,16 +51,22 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         h_A = h_A.copy()
         h_B = h_B.copy()
 
-        for L in range(h_A.ell_min, h_A.ell_max + 1):
-            for M in range(-L, L + 1):
-                if not (L, M) in modes:
-                    h_A.data[:, sf.LM_index(L, M, h_A.ell_min)] *= 0
-                    h_B.data[:, sf.LM_index(L, M, h_B.ell_min)] *= 0
+        for ell in range(h_A.ell_min, h_A.ell_max+1):
+            for m in range(-ell, ell+1):
+                if (ell, m) not in spherical_modes:
+                    h_A.data[:, h_A.index(ell, m)] *= 0
+                    h_B.data[:, h_B.index(ell, m)] *= 0
 
-        h_A_h_B_inner_product = np.real(integrate(np.sum(h_A.data * np.conjugate(h_B.data), -1), h_A.t)[-1])
-        h_A_norm = integrate(np.sum(h_A.data * np.conjugate(h_A.data),-1), h_A.t)[-1].real
-        h_B_norm = integrate(np.sum(h_B.data * np.conjugate(h_B.data),-1), h_B.t)[-1].real
-        return 1 - h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm)
+        numerator = np.real(h_A.inner_product(h_B, t1=t0, t2=t0+T))
+        h_A_norm = np.real(h_A.inner_product(h_A, t1=t0, t2=t0+T))
+        h_B_norm = np.real(h_B.inner_product(h_B, t1=t0, t2=t0+T))
+
+        return 1 - numerator/np.sqrt(h_A_norm*h_B_norm)
+
+        # h_A_h_B_inner_product = np.real(integrate(np.sum(h_A.data * np.conjugate(h_B.data), -1), h_A.t)[-1])
+        # h_A_norm = integrate(np.sum(h_A.data * np.conjugate(h_A.data),-1), h_A.t)[-1].real
+        # h_B_norm = integrate(np.sum(h_B.data * np.conjugate(h_B.data),-1), h_B.t)[-1].real
+        # return 1 - h_A_h_B_inner_product / np.sqrt(h_A_norm * h_B_norm)
         
 
 def ringdown_fit(data, spherical_mode, qnms, Mf, chif, t0, t0_method='geq', T=100):
