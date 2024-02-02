@@ -1,7 +1,6 @@
 [project]
 name = "qnmfits"
 dynamic = ["version", "description"]
-description = "blah"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
