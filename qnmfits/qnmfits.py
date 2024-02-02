@@ -765,23 +765,34 @@ def fit_W_modes(W, chi, M, mode_labels, spherical_modes=None,
         
     return res_mode_dict
 
-def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400, 
+def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0., maxiter=400, 
                         xtol=1e-4, ftol=1e-4):
     
     """Use scipy.optimize.minimize to find best fit spin, mass, and qnm amplitudes to a waveform
     Parameters
     ----------
     W : WaveformModes
+    
     mode_labels : list of tuples
+    
+    spherical_modes : list, optional [Default: None]
+        List of tuples (l,m) over which to minimize mismatch over. If 'None',
+        then the (l,m) modes of the mode_labels will be used.
+    
     t_0 : float, optional [Default: 0.]
         Waveform model is 0 for t < t_0.
+    
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
+    
     Returns
     -------
     chi : double
+    
     M : double
+    
     res_mode_dict : dict
+    
     res : scipy.optimize.OptimizeResult
     """
 
@@ -799,7 +810,7 @@ def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400,
         if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
             return 1e6
         mode_dict = fit_W_modes(W_fitted_modes, chi, M, mode_labels,
-                spherical_modes=None, t_0=t_0, t_ref=t_ref)
+                spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
         Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
         Q_fitted_modes = Q.copy()
         Q_fitted_modes.data *= 0.
@@ -819,8 +830,7 @@ def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400,
         chi = res.x[0]
         M = res.x[1]
         res_mode_dict = fit_W_modes(W, chi, M, mode_labels,
-                                    spherical_modes=None, t_0=t_0, t_ref=t_ref)
+                                    spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
         return chi, M, res_mode_dict, res
     else:
-        print(res)
         return None, None, None, res
