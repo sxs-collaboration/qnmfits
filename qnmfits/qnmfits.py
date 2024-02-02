@@ -348,7 +348,7 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
 
         # Build a ringdown model
         mode_labels = list(mode_dict.keys())
-        mode_dict = fit_W_modes(W, chi, M, mode_labels, t_0=t_0, t_ref=t_ref)
+        mode_dict = fit_W_modes(W, chi, M, mode_labels, spherical_modes=None, t_0=t_0, t_ref=t_ref)
         
         Q = qnm_modes_as(chi, M, mode_dict, W, t_0=t_0, t_ref=t_ref)
 
@@ -394,7 +394,7 @@ def pick_modes_greedy(W, chi, M, target_frac, num_modes_max,
                                                     retrograde=retrograde)
     return mode_dict[0], Q, diff, power[0], mismatch[0]
 
-def fit_W_modes(W, chi, M, mode_labels,
+def fit_W_modes(W, chi, M, mode_labels, spherical_modes=None,
                 t_0=0., t_ref=0.):
     """Uses a modification of the mode limited eigenvalue method from 
     arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
@@ -412,15 +412,24 @@ def fit_W_modes(W, chi, M, mode_labels,
     Parameters
     ----------
     W : WaveformModes
+
     chi : float
+
     M : float
+
     mode_labels : list
-        list of tuples (l,m,n,sign).
-        None will be used for no initial guess.
+        List of tuples (l,m,n,sign). None will be used for no initial guess.
+
+    spherical_modes : list, optional [Default: None]
+        List of tuples (l,m) over which to minimize mismatch over. If 'None',
+        then the (l,m) modes of the mode_labels will be used.
+
     t_0 : float, optional [Default: 0.]
         Waveform model is 0 for t < t_0.
+
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
+
     Returns
     -------
     res_mode_dict : dict
@@ -429,6 +438,10 @@ def fit_W_modes(W, chi, M, mode_labels,
     res_mode_dict = {}
     for mode in mode_labels:
         res_mode_dict[mode] = None
+
+    if spherical_modes is None:
+        spherical_modes = [(l,m) for (l, m,_,_) in mode_labels]
+        print(spherical_modes)
     
     m_list = []
     [m_list.append(m) for (_, m,_,_) in mode_labels if m not in m_list]
@@ -436,11 +449,12 @@ def fit_W_modes(W, chi, M, mode_labels,
     # in ell for each m is different.
     for m in m_list:
         mode_labels_m = [label for label in mode_labels if label[1]==m]
-        ell_max_m = max([l for l,_,_,_ in mode_labels_m])  # Truncate all modes above ell_max_m for this m
-        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in range(2, ell_max_m+1)]
+        ell_max_m = max([l for l,em in spherical_modes if em==m])  # Truncate all modes above ell_max_m for this m
+        ell_min_m = min([l for l,em in spherical_modes if em==m])
+        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in range(ell_min_m, ell_max_m+1)]
         
-        A = np.zeros((len(W.t),ell_max_m-1), dtype=complex) # Data overlap with qnm modes
-        B = np.zeros((len(W.t),ell_max_m-1, len(mode_labels_m)), dtype=complex)
+        A = np.zeros((len(W.t),len(data_index_m)), dtype=complex) # Data overlap with qnm modes
+        B = np.zeros((len(W.t),len(data_index_m), len(mode_labels_m)), dtype=complex)
         
         W_trunc = W[:,:ell_max_m+1]
         A = W_trunc.data[:, data_index_m]
@@ -450,8 +464,8 @@ def fit_W_modes(W, chi, M, mode_labels,
                              t_0=t_0, t_ref=t_ref)
             B[:,:,mode_index] = Q.data[:,data_index_m]
 
-        A = np.reshape(A, len(W.t)*(ell_max_m-1))
-        B = np.reshape(B, (len(W.t)*(ell_max_m-1), len(mode_labels_m)))
+        A = np.reshape(A, len(W.t)*len(data_index_m))
+        B = np.reshape(B, (len(W.t)*len(data_index_m), len(mode_labels_m)))
         C = np.linalg.lstsq(B, A, rcond=None)
         for i, label in enumerate(mode_labels_m):
             res_mode_dict[label] = C[0][i]
@@ -492,7 +506,7 @@ def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400,
         if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
             return 1e6
         mode_dict = fit_W_modes(W_fitted_modes, chi, M, mode_labels,
-                t_0=t_0, t_ref=t_ref)
+                spherical_modes=None, t_0=t_0, t_ref=t_ref)
         Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
         Q_fitted_modes = Q.copy()
         Q_fitted_modes.data *= 0.
@@ -512,7 +526,7 @@ def fit_chi_M_and_modes(W, mode_labels, t_0=0., t_ref=0., maxiter=400,
         chi = res.x[0]
         M = res.x[1]
         res_mode_dict = fit_W_modes(W, chi, M, mode_labels,
-                                    t_0=t_0, t_ref=t_ref)
+                                    spherical_modes=None, t_0=t_0, t_ref=t_ref)
         return chi, M, res_mode_dict, res
     else:
         print(res)
