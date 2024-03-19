@@ -2,7 +2,6 @@ import numpy as np
 
 import json
 import scri
-import pickle
 
 from pathlib import Path
 from urllib.request import urlretrieve
@@ -23,7 +22,7 @@ class cce:
         with open(self.file_dir / 'data/cce-catalog.json', 'r') as f:
             self.catalog = json.load(f)
         
-    def load(self, ID):
+    def load(self, ID, level=5):
         """
         Load a simulation from the catalog, and add the simulation directory
         and metadata to the AsymptoticBondiData object.
@@ -32,6 +31,9 @@ class cce:
         ----------
         ID : int
             The ID of the simulation to load.
+
+        level : int, optional
+            The level of the simulation to load. Default is 5.
 
         Returns
         -------
@@ -42,8 +44,8 @@ class cce:
         name = f'SXS:BBH_ExtCCE:{int(ID):04d}'
 
         # The location we'll download the files to
-        sim_dir = self.file_dir / 'data' / name
-        sim_dir.mkdir(exist_ok=True)
+        sim_dir = self.file_dir / 'data' / name / f'Lev{level}'
+        sim_dir.mkdir(exist_ok=True, parents=True)
 
         # Access the appropriate entry in the CCE catalog
         for entry in self.catalog:
@@ -59,16 +61,16 @@ class cce:
         # Check if simulation metadata already exists
         if not metadata_path.is_file():
             # Download simulation metadata
-            print(f'Downloading {url}/files/Lev5/metadata.json')
+            print(f'Downloading {url}/files/Lev{level}/metadata.json')
             urlretrieve(
-                f'{url}/files/Lev5/metadata.json?download=1', 
+                f'{url}/files/Lev{level}/metadata.json?download=1', 
                 metadata_path
                 )
         
         # Load and merge with existing metadata
-        with open(sim_dir / 'metadata.json', 'r') as f:
+        with open(metadata_path, 'r') as f:
             official_metadata = json.load(f)
-        metadata = {**metadata, **official_metadata}
+        metadata = {**metadata, **official_metadata, **{'level': level}}
 
         # Download simulation data
 
@@ -77,23 +79,23 @@ class cce:
 
         for wf in wf_types:
 
-            wf_path = sim_dir / f'{wf}_BondiCce_R{R:04d}_CoM.h5'
+            wf_path = sim_dir / f'{wf}_BondiCce_R{R:04d}.h5'
 
             # Check if the simulation data already exists
             if not wf_path.is_file():
                 # Download simulation data                
-                print(f'Downloading {url}/files/Lev5/{wf}_BondiCce_R{R:04d}_CoM.h5')
+                print(f'Downloading {url}/files/Lev{level}:{wf}_BondiCce_R{R:04d}.h5')
                 urlretrieve(
-                    f'{url}/files/Lev5/{wf}_BondiCce_R{R:04d}_CoM.h5?download=1',
+                    f'{url}/files/Lev{level}:{wf}_BondiCce_R{R:04d}.h5?download=1',
                     wf_path
                     ) 
             
-            wf_json_path = sim_dir / f'{wf}_BondiCce_R{R:04d}_CoM.json'
+            wf_json_path = sim_dir / f'{wf}_BondiCce_R{R:04d}.json'
             # Check if the simulation json data already exists
             if not wf_json_path.is_file():
-                print(f'Downloading {url}/files/Lev5/{wf}_BondiCce_R{R:04d}_CoM.json')
+                print(f'Downloading {url}/files/Lev{level}:{wf}_BondiCce_R{R:04d}.json')
                 urlretrieve(
-                    f'{url}/files/Lev5/{wf}_BondiCce_R{R:04d}_CoM.json?download=1',
+                    f'{url}/files/Lev{level}:{wf}_BondiCce_R{R:04d}.json?download=1',
                     wf_json_path
                     ) 
         
@@ -101,9 +103,9 @@ class cce:
         # AsymptoticBondiData object
         wf_paths = {}
         for keyword, argument in zip(['h', 'Psi4', 'Psi3', 'Psi2', 'Psi1', 'Psi0'], wf_types):
-            wf_paths[keyword] = sim_dir / f'{argument}_BondiCce_R{R:04d}_CoM.h5'
+            wf_paths[keyword] = sim_dir / f'{argument}_BondiCce_R{R:04d}.h5'
 
-        abd = scri.SpEC.create_abd_from_h5(file_format='RPXMB', **wf_paths)
+        abd = scri.SpEC.create_abd_from_h5(file_format='RPDMB', **wf_paths)
         
         # Store the simulation directory and metadata in the object
         abd.sim_dir = sim_dir
