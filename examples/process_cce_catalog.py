@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 import json
 import shutil
@@ -97,7 +96,7 @@ def map_to_superrest(abd, t0):
         # Extract these and save to a metadata file.
         Mf = abd_prime.bondi_rest_mass()[-1]
         chif = abd_prime.bondi_dimensionless_spin()[-1]
-        metadata = {'Mf': Mf, 'chif': list(chif)}
+        metadata = {'remnant_mass': Mf, 'remnant_dimensionless_spin': list(chif)}
 
         with open(sim_dir / f'metadata_BondiCce_R{R:04d}_superrest.json', 'w') as f:
             json.dump(metadata, f)
