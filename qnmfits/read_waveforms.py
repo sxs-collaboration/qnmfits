@@ -13,7 +13,7 @@ import numpy as np
 import pickle
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
-from qnmfits import waveform_mismatch
+from qnmfits import mismatch
 
 import cce
 cce = cce.cce()
@@ -90,6 +90,33 @@ def to_WaveformModes(times, data, ell_max, ell_min=2):
         m_is_scaled_out = True,
         )
 
+    return h
+
+def sxs_to_scri_WM(h_sxs, dataType=scri.h):
+    """Converts an sxs WaveformModes object to that of scri.
+
+    Parameters
+    ----------
+    h_sxs : sxs WaveformModes object
+
+    dataType : int, optional [Default: scri.h]
+        `scri.dataType` appropriate for `data`
+
+    Returns
+    _______
+    h : WaveformModes
+        Waveform object
+
+    """
+    h = scri.WaveformModes(t=h_sxs.t,\
+                           data=h_sxs.data,\
+                           ell_min=2,\
+                           ell_max=h_sxs.ell_max,\
+                           frameType=scri.Inertial,\
+                           dataType=dataType
+                          )
+    h.r_is_scaled_out = True
+    h.m_is_scaled_out = True
     return h
 
 

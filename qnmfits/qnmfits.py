@@ -2,6 +2,7 @@ import numpy as np
 import spherical_functions as sf
 
 import scri
+from scri import WaveformModes
 
 from scipy.optimize import minimize
 from scri.sample_waveforms import modes_constructor
@@ -195,7 +196,7 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0., **kwar
         **kwargs
         )
 
-def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=None):
+def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=0.):
     """
     Uses a modification of the mode limited eigenvalue method from 
     arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
@@ -217,7 +218,6 @@ def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=None):
 
     if spherical_modes is None:
         spherical_modes = [(l,m) for (l, m,_,_) in mode_labels]
-        print(spherical_modes)
     
     m_list = []
     [m_list.append(m) for (_, m,_,_) in mode_labels if m not in m_list]
@@ -225,15 +225,16 @@ def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=None):
     # in ell for each m is different.
     for m in m_list:
         mode_labels_m = [label for label in mode_labels if label[1]==m]
-        ell_max_m = max([l for l,em in spherical_modes if em==m])  # Truncate all modes above ell_max_m for this m
-        ell_min_m = min([l for l,em in spherical_modes if em==m])
-        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in range(ell_min_m, ell_max_m+1)]
+        ell_list = [l for l,em in spherical_modes if em==m]
+        ell_max_m = max(ell_list)  # Truncate all modes above ell_max_m for this m
+        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in ell_list]
         
-        A = np.zeros((len(W.t),len(data_index_m)), dtype=complex) # Data overlap with qnm modes
-        B = np.zeros((len(W.t),len(data_index_m), len(mode_labels_m)), dtype=complex)
+        A = np.zeros((len(W.t),len(spherical_modes)), dtype=complex) # Data overlap with qnm modes
+        B = np.zeros((len(W.t),len(spherical_modes), len(mode_labels_m)), dtype=complex)
         
         W_trunc = W[:,:ell_max_m+1]
         A = W_trunc.data[:, data_index_m]
+        #A = W.data[:, data_index_m]
         for mode_index, label in enumerate(mode_labels_m):
             tmp_mode_dict = {label: 1.}
             Q = qnm_modes_as(chi, M, tmp_mode_dict, W_trunc, 
