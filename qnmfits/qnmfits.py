@@ -196,7 +196,7 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0., **kwar
         **kwargs
         )
 
-def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=0.):
+def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., t_ref=0.):
     """
     Uses a modification of the mode limited eigenvalue method from 
     arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
@@ -234,7 +234,6 @@ def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=0.):
         
         W_trunc = W[:,:ell_max_m+1]
         A = W_trunc.data[:, data_index_m]
-        #A = W.data[:, data_index_m]
         for mode_index, label in enumerate(mode_labels_m):
             tmp_mode_dict = {label: 1.}
             Q = qnm_modes_as(chi, M, tmp_mode_dict, W_trunc, 
@@ -250,7 +249,7 @@ def fit(W, mode_labels, M, chi, t_0, spherical_modes=None, t_ref=0.):
     return res_mode_dict
 
 def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0., 
-                        maxiter=400, xtol=1e-4, ftol=1e-4):
+                        maxiter=1000, xtol=1e-8, ftol=1e-8):
     
     """Use scipy.optimize.minimize to find best fit spin, mass, and qnm amplitudes to a waveform
     Parameters
@@ -293,7 +292,7 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
         M = chi_M[1]
         if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
             return 1e6
-        mode_dict = fit_W_modes(W_fitted_modes, chi, M, mode_labels,
+        mode_dict = fit(W_fitted_modes, chi, M, mode_labels,
                 spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
         Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
         Q_fitted_modes = Q.copy()
@@ -313,8 +312,8 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
     if (res.success):
         chi = res.x[0]
         M = res.x[1]
-        res_mode_dict = fit_W_modes(W, chi, M, mode_labels,
-                                    spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
+        res_mode_dict = fit(W, chi, M, mode_labels,
+                            spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
         return chi, M, res_mode_dict, res
     else:
         return None, None, None, res
