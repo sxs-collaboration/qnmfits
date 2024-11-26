@@ -15,8 +15,8 @@ from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
 from qnmfits import mismatch
 
-import cce
-cce = cce.cce()
+from .cce import cce
+cce = cce()
 
 def n_modes(ell_max, ell_min=2):
     """
