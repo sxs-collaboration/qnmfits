@@ -32,12 +32,12 @@ class cce:
         ID : int
             The ID of the simulation to load.
 
-        level : int, optional
-            The level of the simulation to load. Default is 5.
+        level : int, optional [Default: 5]
+            The level of the simulation to load.
 
         Returns
         -------
-        abd : AsymptoticBondiData
+        abd : AsymptoticBondiData object
             The simulation data.
         """
         # Convert the ID to the simulation name

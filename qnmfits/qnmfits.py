@@ -390,16 +390,16 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
 
     Parameters
     ----------
-    modes_so_far_dict: dict
+    modes_so_far_dict : dict
          Dictionary keys are tuples (l,m,n,sign) and values are complex amplitudes.
          
-    loudest_lms:  list of tuples (l,m)
+    loudest_lms : list of tuples (l,m)
       *Spherical* harmonic indices in order of loudest first
     
-    n_max: int, optional [Default: 7]
+    n_max : int, optional [Default: 7]
         Maximum overtone number to include in fits (includes n_max).
     
-    retrograde: boolean, optional [Default: False]
+    retrograde : boolean, optional [Default: False]
         All retrograde QNMs included if True, else only prograde mode is added
         except for m=0, where both are always added.
          
@@ -407,7 +407,6 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     -------
     new_modes : dict
     """
-
     new_modes = modes_so_far_dict
     #Loop through loudest_lms till we find a mode we can add
     for loudest_l, loudest_m in loudest_lms:
@@ -437,33 +436,46 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
     of modes in nmodes_to_report. By default, the power is calculated using the News
     function. 
 
+    Note that if retrograde is True, one (ell,m,n) mode is defined as including
+    both prograde and retrograde solutions of (ell,m,n). If retrograde is
+    False, then and (ell,m,n) mode counts as one mode.
+
     Parameters
     ----------
-    W: WaveformModes
+    W : WaveformModes object
 
-    chi: float
+    chi : float
+        The dimensionless spin of the black hole, 0. <= chi < 1.
 
-    M: float
+    M : float
+        The mass of the black hole, M > 0.
 
-    target_frac: float
+    target_frac : float
+        The target fractional power to leave unmodeled. Values should be 0. if
+        one wants to model as much power as possible, in which case
+        num_modes_max will be reached. If target_frac is non-zero and reached
+        before num_modes_max, algorithm will exit with some modelled modes.
 
-    num_modes_max: int
+    num_modes_max : int
+        Maximum number of modes to greedily chose.
 
-    nmodes_to_report: list, optional [Default: None]
+    nmodes_to_report : list, optional [Default: None]
         List of modes to append on the way to num_modes_max.
 
-    initial_modes_dict: dictionary, optional [Default: {}]
+    initial_modes_dict : dictionary, optional [Default: {}]
         Dictionary keys are tuples (l,m,n,sign) and values are complex amplitudes.
 
-    t_0: float, optional [Default: 0.]
+    t_0 : float, optional [Default: 0.]
         Waveform model is 0 for t < t_0.
 
-    t_ref: float, optional [Default: 0.]
+    t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
 
-    T: float, 
+    T : float, optional [Default: 90.]
+        The duration of the mismatch calculation, such that the end time of the
+        mismatch integral is t0 + T.
 
-    n_max: int, optional [Default: 7]
+    n_max : int, optional [Default: 7]
         Maximum overtone number to allow for a given mode (includes n_max).
 
     retrograde: boolean, optional [Default: False]
@@ -472,18 +484,18 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
 
     Returns
     -------
-    mode_dict: dict from fit_W_modes
+    mode_dict : dict from fit_W_modes
 
-    Q: WaveformModes
+    Q : WaveformModes object
       QNM model waveform corresponding to res_mode_dict
 
-    diff: WaveformModes
+    diff : WaveformModes object
       Difference waveform W-Q
 
-    frac_unmodeled_powers: list
+    frac_unmodeled_powers : list
       Fraction of power still unmodeled for each nmode_to_report
 
-    wf_mismatches: list
+    wf_mismatches : list
       Mismatches between W and Q for each nmode_to_report
     """
 

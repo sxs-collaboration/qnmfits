@@ -28,12 +28,12 @@ def n_modes(ell_max, ell_min=2):
     ell_max : int
         The maximum value of ell.
 
-    ell_min : int, optional
-        The minimum value of ell. The default is 2.
+    ell_min : int, optional [Default: 2]
+        The minimum value of ell.
 
     Returns
     -------
-    int
+    n : int
         The number of spherical-harmonic modes between ell_min and ell_max.
     """
     return sum([2*ell+1 for ell in range(ell_min, ell_max+1)])
@@ -63,7 +63,7 @@ def to_WaveformModes(times, data, ell_max, ell_min=2):
 
     Returns
     -------
-    h : WaveformModes
+    h : WaveformModes object
         The spherical-harmonic waveform modes in the WaveformModes format.
     """
     # Ensure data is in the correct format
@@ -93,7 +93,9 @@ def to_WaveformModes(times, data, ell_max, ell_min=2):
     return h
 
 def sxs_to_scri_WM(h_sxs, dataType=scri.h):
-    """Converts an sxs WaveformModes object to that of scri.
+    """
+    Converts an sxs WaveformModes object to that of scri for easier waveform
+    manipulation.
 
     Parameters
     ----------
@@ -104,9 +106,7 @@ def sxs_to_scri_WM(h_sxs, dataType=scri.h):
 
     Returns
     _______
-    h : WaveformModes
-        Waveform object
-
+    h : scri WaveformModes object
     """
     h = scri.WaveformModes(t=h_sxs.t,\
                            data=h_sxs.data,\
@@ -134,7 +134,6 @@ def get_CCE_radii(simulation_dir, radius_index = None):
     -------
     radii : list of strings
         Simulation radii
-
     """
     CCE_files = [filename for filename in os.listdir(simulation_dir) if 'rhOverM' in filename and '.h5' in filename]
     radii = [filename.split('R')[1][:4] for filename in CCE_files]
@@ -146,7 +145,7 @@ def get_CCE_radii(simulation_dir, radius_index = None):
 
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
         sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
-    """Returns metadata structure, WaveformModes object, and sxs_id
+    """Returns metadata, extrapolated waveform, and sxs id.
 
     Parameters
     __________
@@ -182,7 +181,6 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
 
     sxs_id : string
         Name of this simulation
-
     """
     if use_sxs == False and ext_dir == None and wf_path == None:
         raise TypeError('Set use_sxs=True or give directory and path name to'\
@@ -206,27 +204,26 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     return md, W, sxs_id
 
 def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
-    """Returns an AsymptoticBondiData object and WaveformModes object. 
+    """Returns an AsymptoticBondiData object and CCE waveform. 
 
+    Example:
+    load_CCENR_data("/Users/Username/Simulations/CCE_XXXX/LevX")
+    
     Paremeters
     ----------
     cce_dir : str
         Directory where specific CCE waveform data is located
 
-    file_format: str, optional [Default: 'SXS']
+    file_format : str, optional [Default: 'SXS']
         'SXS' for data stored in .h5 format and 'RPXMB' for data store in both
         .h5 and .json formats.
 
-    Example:
-    load_CCENR_data("/Users/Username/Simulations/CCE_XXXX/LevX")
-    
     Returns
     -------
-    abd_CCE : AsymptoticBondiData
+    abd_CCE : AsymptoticBondiData object.
 
-    h_CCE : WaveformModes
-        Waveform object with peak at t=0M
-
+    h_CCE : WaveformModes object
+        Waveform object with peak at t=0M.
     """
     if use_sxs == False and cce_dir == None:
         raise TypeError('Set use_sxs=True or give directory name to'\
@@ -256,7 +253,7 @@ def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
 
     Parameters
     ----------
-    abd_CCE : AsymptoticBondiData
+    abd_CCE : AsymptoticBondiData object
 
     t_0 : float, optional [Default: 350.]
         Time to map to the superrest frame of the remnant black hole. For ringdown
@@ -265,7 +262,7 @@ def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
     padding_time : float, optional [Default: 100.]
         Amount by which to pad around t_0 to speed up computations.
 
-   save : bool, optional [Default: False]
+    save : bool, optional [Default: False]
         If True, the supertranslated waveform will be saved in a directory
         called 'BMS_data'.
 
@@ -274,8 +271,8 @@ def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
 
     Returns
     -------
-    h_superrest : WaveformModes
-        WaveformModes object in the BMS superrest frame
+    h_superrest : WaveformModes object
+        Waveform in the BMS superrest frame.
 
     """
 
@@ -301,16 +298,15 @@ def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
     return abd_superrest, h_superrest 
 
 def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
-    '''Waveforms are assumed to have z-axis aligned by final spin or something else, 
+    """Waveforms are assumed to have z-axis aligned by final spin or something else, 
     and times aligned as well. Rotation about z-axis is done to minimize mismatch. 
 
     Parameters
     ----------
-    W : WaveformModes
-        Waveform object
+    W : WaveformModes object
 
-    W_LR : WaveformModes
-        Waveform object of lower resolution
+    W_LR : WaveformModes object
+        Waveform with lower resolution
 
     t0_arr : float array
         Waveform model is 0 for t < t0_arr values
@@ -328,9 +324,8 @@ def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False):
         Minimized NR resolution mismatch at each time, t0
     
     rotation_LR : list of floats
-        Minimized phi rotations at each time, t0
-        
-    '''
+        Minimized phi rotations at each time, t0 
+    """
     resolution_mismatch = []
     rotation_LR = []
     W_interp = W.copy() 
@@ -364,11 +359,10 @@ def align_lev(W, W_LR, t0, mode=None, news=False):
 
     Parameters
     ----------
-    W : WaveformModes
-        Waveform object
+    W : WaveformModes object
 
-    W_LR : WaveformModes
-        Waveform object of lower resolution
+    W_LR : WaveformModes object
+        Waveform with lower resolution.
 
     t0 : float
         Waveform model is 0 for t < t0
@@ -378,13 +372,12 @@ def align_lev(W, W_LR, t0, mode=None, news=False):
         mismatch.
 
     news : bool, optional [Default: False]
-        Use the strain or news domain to calculate mismatches
+        Use the strain or news domain to calculate mismatches.
     
     Returns
     -------
-    W_rot : WaveformModes
-        Rotated waveform object
-
+    W_rot : WaveformModes object
+        Rotated waveform.
     """
     mism, phi = get_resolution_mismatches(W, W_LR, [t0], mode, news)
     W_interp = W.copy() 
@@ -400,17 +393,15 @@ def rotate_wf(W, chi_f):
 
     Paremeters
     ----------
-    W : WaveformModes
-        Waveform object
+    W : WaveformModes object
 
     chi_f : array
-        Remnant black hole spin in x, y, and z directions
+        Remnant black hole spin vector in (x,y,z) directions.
 
     Returns
     -------
-    W : WaveformModes
-        Rotated waveform object
-
+    W : WaveformModes object
+        Rotated waveform.
     """
     th_z = np.arccos(chi_f[2]/np.linalg.norm(chi_f))
     r_dir = np.cross([0,0,1],chi_f)
