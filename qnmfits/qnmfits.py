@@ -2,7 +2,6 @@ import numpy as np
 import spherical_functions as sf
 
 import scri
-from scri import WaveformModes
 
 from scipy.optimize import minimize
 from scri.sample_waveforms import modes_constructor
@@ -10,11 +9,12 @@ from quaternion.calculus import indefinite_integral as integrate
 
 from .read_qnms import qnm_from_tuple
 
+
 def mismatch(h_A, h_B, t0, T, spherical_modes=None):
     """
-    Returns the mismatch between two waveforms over the given spherical 
+    Returns the mismatch between two waveforms over the given spherical
     harmonics or over all modes.
-    
+
     Parameters
     ----------
     h_A, h_B : WaveformModes objects
@@ -25,10 +25,10 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
 
     T : float
         The duration of the mismatch calculation, such that the end time of the
-        mismatch integral is t0 + T. 
+        mismatch integral is t0 + T.
 
     spherical_modes : list of tuples (l,m), optional [Default: None]
-        A sequence of (l,m) modes to compute mismatch. If None, the 
+        A sequence of (l,m) modes to compute mismatch. If None, the
         mismatch is calculated over all modes in the WaveformModes object.
 
     Returns
@@ -41,9 +41,10 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         numerator = np.real(h_A.inner_product(h_B, t1=t0, t2=t0+T))
 
         denominator = np.sqrt(np.real(
-            h_A.inner_product(h_A, t1=t0, t2=T)*h_B.inner_product(h_B, t1=t0, t2=t0+T)
-            ))
-        
+            h_A.inner_product(h_A, t1=t0, t2=T)
+            * h_B.inner_product(h_B, t1=t0, t2=t0+T)
+        ))
+
         return 1 - numerator/denominator
 
     else:
@@ -62,6 +63,7 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         h_B_norm = np.real(h_B.inner_product(h_B, t1=t0, t2=t0+T))
 
         return 1 - numerator/np.sqrt(h_A_norm*h_B_norm)
+
 
 def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
     """
@@ -105,37 +107,41 @@ def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
             # Need to allocate
             data = np.zeros(d_shape, dtype=complex)
         else:
-            if ((dest.shape != d_shape)
-                or (dest.dtype is not np.dtype(complex))):
+            if (
+                (dest.shape != d_shape) or
+                (dest.dtype is not np.dtype(complex))
+            ):
                 raise TypeError("dest has wrong dtype or shape")
             data = dest
             data.fill(0.)
 
         for (ell_prime, m_prime, n, sign), A in mode_dict.items():
-            #print("Working on ({},{},{},{}) with A={}".format(ell_prime, m_prime, n, sign, A))
             omega, C, ells = qnm_from_tuple(
                 (ell_prime, m_prime, n, sign), chi, M, s
-                )
-            
-            expiwt = np.exp( complex(0., -1.) * omega * (t - t_ref))
-            expiwt[ t < t_0 ] = 0.
+            )
+
+            expiwt = np.exp(complex(0., -1.) * omega * (t - t_ref))
+            expiwt[t < t_0] = 0.
             for _l, _m in LM:
                 if (_m == m_prime):
                     c_l = C[ells == _l]
                     if (len(c_l) > 0):
                         c_l = c_l[0]
-                        #print("Adding to ({},{}) with amplitude {}".format(_l, _m, c_l * A))
-                        data[:, sf.LM_index(_l, _m, min(LM[:, 0]))] += c_l * A * expiwt
+                        data[:, sf.LM_index(_l, _m, min(LM[:, 0]))] += \
+                            c_l * A * expiwt
 
         return data
-    
-    constructor_statement = 'qnm_modes({0}, {1}, {2}, t_0={3}, t_ref={4}, **{5})'.format(
-        chi, M, mode_dict, t_0, t_ref, kwargs
+
+    constructor_statement = \
+        'qnm_modes({0}, {1}, {2}, t_0={3}, t_ref={4}, **{5})'.format(
+            chi, M, mode_dict, t_0, t_ref, kwargs
         )
-    
+
     return modes_constructor(constructor_statement, data_functor, **kwargs)
 
-def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0., **kwargs):
+
+def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0.,
+                 **kwargs):
     """
     WaveformModes object with multiple qnms, 0 elsewhere, with time
     and LM following W_other.
@@ -177,33 +183,35 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0., **kwar
     ell_max = W_other.ell_max
 
     return qnm_modes(
-        chi, 
-        M, 
-        mode_dict, 
-        dest=dest, 
-        t_0=t_0, 
+        chi,
+        M,
+        mode_dict,
+        dest=dest,
+        t_0=t_0,
         t_ref=t_ref,
-        t=t, 
-        ell_min=ell_min, 
+        t=t,
+        ell_min=ell_min,
         ell_max=ell_max,
         **kwargs
-        )
+    )
 
-def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., t_ref=0.):
+
+def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., T=100,
+        t_ref=0.):
     """
-    Uses a modification of the mode limited eigenvalue method from 
+    Uses a modification of the mode limited eigenvalue method from
     arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
-    
+
     We modify the procedure by restricting the minimization of the mismatch
     only over modes that we care about. These modes are selected as follows:
-    for every m, in mode_labels we find the maximum ell for which 
-    some (ell, m, n , s) is in mode labels. This sets the ell_max for 
+    for every m, in mode_labels we find the maximum ell for which
+    some (ell, m, n , s) is in mode labels. This sets the ell_max for
     that m. We don't consider modes with higher ell's in the mismatch
-    to minimize. We are not trying to model these high-ell spherical modes, 
+    to minimize. We are not trying to model these high-ell spherical modes,
     so how well the low-ell qnm modes fit these high-ell modes through
     (spherical-spheroidal mixing) should not be part of the equation.
     Thus we project them out of the NR data and QNM modes.
-    
+
     Parameters
     ----------
     W : WaveformModes object
@@ -216,12 +224,12 @@ def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., t_ref=0.):
         The mass of the black hole, M > 0.
 
     mode_labels : list of tuples (l, m, n, sign)
-        List of modes to fit over. 
+        List of modes to fit over.
 
     spherical_modes : list of tuples (l,m), optional [Default: None]
         A sequence of (l,m) modes to fit over. If None, all (l,m) modes in
         model_labels are used.
-    
+
     t_0 : float, optional [Default: 0.]
         Waveform model is 0 for t < t_0.
 
@@ -233,28 +241,45 @@ def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., t_ref=0.):
     res_mode_dict : dict
         Dictionary of QNM modes with complex amplitudes.
     """
+    # Dictionary to store the best-fit QNM amplitudes
     res_mode_dict = {}
-    for mode in mode_labels:
-        res_mode_dict[mode] = None
 
+    # TODO Default to all available spherical modes if None?
     if spherical_modes is None:
-        spherical_modes = [(l,m) for (l, m,_,_) in mode_labels]
-    
+        spherical_modes = [(ell, m) for (ell, m, _, _) in mode_labels]
+
+    # List of all the m indices we're considering in this fit
     m_list = []
-    [m_list.append(m) for (_, m,_,_) in mode_labels if m not in m_list]
-    # Break problem into one m at a time. The m's are decoupled, and the truncation
-    # in ell for each m is different.
+    for (_, m, _, _) in mode_labels:
+        if m not in m_list:
+            m_list.append(m)
+
+    # Window and shift the data
+    h_shifted = W.copy()[
+        np.argmin(abs(W.t - t_0)):np.argmin(abs(W.t - t_0 - T))+1, :
+    ]
+
+    # Break problem into one m at a time. The m's are decoupled, and the
+    # truncation in ell for each m is different.
     for m in m_list:
-        mode_labels_m = [label for label in mode_labels if label[1]==m]
-        ell_list = [l for l,em in spherical_modes if em==m]
-        lm_list = [(l,em) for l,em in spherical_modes if em==m]
-        ell_max_m = max(ell_list)  # Truncate all modes above ell_max_m for this m
-        data_index_m = [sf.LM_index(l, m, W.ell_min) for l in ell_list]
+
+        # The QNMs with this value of m
+        mode_labels_m = [label for label in mode_labels if label[1] == m]
+
+        # The ell indices in the spherical harmonic modes which overlap with
+        # the current m
+        ell_list = [ell for ell, em in spherical_modes if em == m]
+
+        # The spherical harmonic modes with the current value of m
+        lm_list = [(ell, em) for ell, em in spherical_modes if em == m]
+
+        # Truncate all modes above ell_max_m for this m
+        ell_max_m = max(ell_list)
+        data_index_m = [sf.LM_index(l, m, h_shifted.ell_min) for l in ell_list]
+
+        B = np.zeros((len(h_shifted.t),len(lm_list),len(mode_labels_m)), dtype=complex)
         
-        A = np.zeros((len(W.t),len(lm_list)), dtype=complex) # Data overlap with qnm modes
-        B = np.zeros((len(W.t),len(lm_list),len(mode_labels_m)), dtype=complex)
-        
-        W_trunc = W[:,:ell_max_m+1]
+        W_trunc = h_shifted[:,:ell_max_m+1]
         A = W_trunc.data[:, data_index_m]
         for mode_index, label in enumerate(mode_labels_m):
             tmp_mode_dict = {label: 1.}
