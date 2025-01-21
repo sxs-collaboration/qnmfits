@@ -1,22 +1,20 @@
-#!/usr/bin/env python
-
-"""Read waveforms for modeling QNMss"""
 import os
 
-import spherical_functions as sf
 import sxs
 import scri
-from scri.asymptotic_bondi_data.map_to_superrest_frame import MT_to_WM, map_to_superrest_frame
+from scri.asymptotic_bondi_data.map_to_superrest_frame import (
+    MT_to_WM, map_to_superrest_frame
+)
 import quaternion
 
 import numpy as np
 import pickle
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize_scalar
-from qnmfits import mismatch
 
 from .cce import cce
 cce = cce()
+
 
 def n_modes(ell_max, ell_min=2):
     """
@@ -37,6 +35,7 @@ def n_modes(ell_max, ell_min=2):
         The number of spherical-harmonic modes between ell_min and ell_max.
     """
     return sum([2*ell+1 for ell in range(ell_min, ell_max+1)])
+
 
 def to_WaveformModes(times, data, ell_max, ell_min=2):
     """
@@ -92,31 +91,31 @@ def to_WaveformModes(times, data, ell_max, ell_min=2):
 
     return h
 
-def sxs_to_scri_WM(h_sxs, dataType=scri.h):
+
+def sxs_to_scri_WaveformModes(h_sxs):
     """
-    Converts an sxs WaveformModes object to that of scri for easier waveform
-    manipulation.
+    Converts an sxs WaveformModes object to a scri WaceformModes object.
 
     Parameters
     ----------
     h_sxs : sxs WaveformModes object
 
-    dataType : int, optional [Default: scri.h]
-        `scri.dataType` appropriate for `data`
-
     Returns
-    _______
+    -------
     h : scri WaveformModes object
     """
-    h = scri.WaveformModes(t=h_sxs.t,\
-                           data=h_sxs.data,\
-                           ell_min=2,\
-                           ell_max=h_sxs.ell_max,\
-                           frameType=scri.Inertial,\
-                           dataType=dataType
-                          )
-    h.r_is_scaled_out = True
-    h.m_is_scaled_out = True
+
+    h = scri.WaveformModes(
+        dataType=scri.h,
+        t=h_sxs.t,
+        data=h_sxs.data,
+        ell_min=h_sxs.ell_min,
+        ell_max=h_sxs.ell_max,
+        frameType=scri.Inertial,
+        r_is_scaled_out=True,
+        m_is_scaled_out=True
+    )
+
     return h
 
 

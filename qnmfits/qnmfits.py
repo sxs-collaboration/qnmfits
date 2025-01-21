@@ -17,7 +17,7 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
 
     Parameters
     ----------
-    h_A, h_B : WaveformModes objects
+    h_A, h_B : WaveformModes
         The two waveforms to calculate the mismatch between.
 
     t0 : float
@@ -27,8 +27,8 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         The duration of the mismatch calculation, such that the end time of the
         mismatch integral is t0 + T.
 
-    spherical_modes : list of tuples (l,m), optional [Default: None]
-        A sequence of (l,m) modes to compute mismatch. If None, the
+    spherical_modes : list of tuples, optional [Default: None]
+        A sequence of (ell, m) modes to compute the mismatch over. If None, the
         mismatch is calculated over all modes in the WaveformModes object.
 
     Returns
@@ -65,7 +65,236 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         return 1 - numerator/np.sqrt(h_A_norm*h_B_norm)
 
 
-def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
+def qnm_WaveformModes(times, chi, M, qnm_amps, t0=0, t_ref=None, ell_min=2,
+                      ell_max=8):
+
+    # If a reference time for the QNM amplitudes isn't given, use t0
+    if t_ref is None:
+        t_ref = t0
+
+    # The spherical-harmonic mode (ell, m) indices for the requested ell_min
+    # and ell_max
+    ell_m_list = sf.LM_range(ell_min, ell_max)
+
+    # Initialize the data array
+    data = np.zeros((len(times), len(ell_m_list)), dtype=complex)
+
+    # Loop through each provided QNM amplitude, and populate the data array
+    # with the sum of (appropriately weighted) QNMs
+    for (ell, m, n, sign), A in qnm_amps.items():
+
+        # Get the complex QNM frequencies omega and the spherical-spheroidal
+        # mixing coefficients C. C is a list of mixing coefficients,
+        # corresponding to different ell values (given by C_ells).
+        omega, C, C_ells = qnm_from_tuple((ell, m, n, sign), chi, M)
+
+        # Construct the pure QNM damped sinusoid. This has not yet been
+        # weighted by the spherical-spheroidal mixing coefficients.
+        h_qnm = A*np.exp(-1j*omega*(times - t_ref))
+        h_qnm[times < t0] = 0
+
+        # Loop through each spherical-harmonic mode in the final data array
+        for ell_prime, m_prime in ell_m_list:
+
+            # h_qnm will only mix into spherical-harmonic modes with the same m
+            if (m_prime == m):
+
+                # Get the mixing coefficient between the (ell, m, n) QNM and
+                # the (ell', m') sppherical-harmonic mode
+                C_ell = C[C_ells == ell_prime][0]
+
+                # Add the weighted QNM to the appropriate spherical mode
+                data[:, sf.LM_index(ell_prime, m_prime, ell_min)] += \
+                    C_ell*h_qnm
+
+    # Construct the WaveformModes object
+    wm = scri.WaveformModes(
+        dataType=scri.h,
+        t=times,
+        data=data,
+        ell_min=ell_min,
+        ell_max=ell_max,
+        frameType=scri.Inertial,
+        r_is_scaled_out=True,
+        m_is_scaled_out=True
+    )
+
+    return wm
+
+
+def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
+    """
+    Uses a modification of the mode limited eigenvalue method from
+    arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
+
+    We modify the procedure by restricting the minimization of the mismatch
+    only over modes that we care about. These modes are selected as follows:
+    for every m, in qnms we find the maximum ell for which
+    some (ell, m, n , s) is in mode labels. This sets the ell_max for
+    that m. We don't consider modes with higher ell's in the mismatch
+    to minimize. We are not trying to model these high-ell spherical modes,
+    so how well the low-ell qnm modes fit these high-ell modes through
+    (spherical-spheroidal mixing) should not be part of the equation.
+    Thus we project them out of the NR data and QNM modes.
+
+    Parameters
+    ----------
+    data : WaveformModes
+        Waveform to use for fitting QNM amplitudes.
+
+    chi : float
+        The dimensionless spin of the black hole, 0. <= chi < 1.
+
+    M : float
+        The mass of the black hole, M > 0.
+
+    qnms : list of tuples (l, m, n, sign)
+        List of modes to fit over.
+
+    spherical_modes : list of tuples (l,m), optional [Default: None]
+        A sequence of (l,m) modes to fit over. If None, all (l,m) modes in
+        model_labels are used.
+
+    t0 : float, optional [Default: 0]
+        The ringdown model start time.
+
+    T : float, optional [Default: 100]
+
+    t_ref : float, optional [Default: None]
+        The time at which the QNM amplitudes are defined. If None, t_ref = t0.
+
+    Returns
+    -------
+    result : dict
+        Dictionary with keys 'amplitudes' (dictionary of best-fit complex QNM
+        amplitudes for each mode in qnms), 'waveform' (WaveformModes object of
+        the best-fit ringdown waveform), 'mismatch' (the mismatch between the
+        best-fit ringdown waveform and data, computed over the requested
+        spherical_modes).
+    """
+    if t_ref is None:
+        t_ref = t0
+
+    result = {}
+
+    # Dictionary to store the best-fit QNM amplitudes
+    qnm_amps = {}
+
+    # TODO Default to all available spherical modes if None?
+    # spherical_modes = sf.LM_range(data.ell_min, data.ell_max)
+    if spherical_modes is None:
+        spherical_modes = [(ell, m) for (ell, m, _, _) in qnms]
+
+    # List of all the m indices we're considering in this fit
+    m_list = []
+    for (_, m, _, _) in qnms:
+        if m not in m_list:
+            m_list.append(m)
+
+    # Window the data
+    h_cut = data.copy()[
+        np.argmin(abs(data.t - t0)):np.argmin(abs(data.t - t0 - T))+1, :
+    ]
+
+    # Break problem into one m at a time. The m's are decoupled, and the
+    # truncation in ell for each m is different.
+    for m in m_list:
+
+        # The QNMs with the current value of m
+        qnms_m = [label for label in qnms if label[1] == m]
+
+        # The spherical-harmonic modes with the current value of m
+        spherical_modes_m = [
+            (ell, mp) for ell, mp in spherical_modes if mp == m
+        ]
+
+        # The ell indices in the spherical-harmonic modes with the current
+        # value of m
+        spherical_ell_list = [ell for ell, _ in spherical_modes_m]
+
+        # Truncate all modes above the maximum ell for this m (when we index
+        # without .data, we index the ells directly)
+        h_trunc = h_cut[:, :max(spherical_ell_list)+1]
+
+        # Index the requested spherical-harmonic modes (for this m) from the
+        # data. b has shape (len(h_cut.t), len(spherical_modes_m)).
+        data_index_m = [h_trunc.index(ell, m) for ell in spherical_ell_list]
+        b = h_trunc.data[:, data_index_m]
+
+        # Initialize the design (or coefficient) matrix for the least-squares
+        # fit
+        a = np.zeros(
+            (len(h_cut.t), len(spherical_modes_m), len(qnms_m)),
+            dtype=complex
+        )
+
+        # Loop over each QNM in our model with the current value of m
+        for qnm_index, label in enumerate(qnms_m):
+
+            # When we call qnm_WaveformModes with a single QNM (given by
+            # label) with unity amplitude, the mixing of that QNM into every
+            # spherical-harmonic mode is computed for us
+            qnm_wm = qnm_WaveformModes(
+                h_cut.t,
+                chi,
+                M,
+                {label: 1},
+                t0=t0,
+                t_ref=t_ref,
+                ell_min=h_trunc.ell_min,
+                ell_max=h_trunc.ell_max
+            )
+
+            # qnm_wm is a WaveformModes object with the same shape as h_trunc,
+            # so we can index the requested spherical-harmonic modes with
+            # data_index_m
+            a[:, :, qnm_index] = qnm_wm.data[:, data_index_m]
+
+        # Reshape the arrays for np.lstsq
+
+        # The data array needs to be one-dimensional. You can view this as
+        # joining each hlm array to make a single long timeseries.
+        b = np.reshape(b, len(h_cut.t)*len(data_index_m))
+
+        # We similarly collapse the spherical-harmonic modes axis in the
+        # design matrix
+        a = np.reshape(a, (len(h_cut.t)*len(data_index_m), len(qnms_m)))
+
+        # Perform the fit
+        amplitudes, _, _, _ = np.linalg.lstsq(a, b, rcond=None)
+
+        # Store the complex QNM amplitudes
+        for i, label in enumerate(qnms_m):
+            qnm_amps[label] = amplitudes[i]
+
+    result['amplitudes'] = qnm_amps
+
+    # Compute the best-fit waveform
+    qnm_wm = qnm_WaveformModes(
+        h_cut.t,
+        chi,
+        M,
+        qnm_amps,
+        t0=t0,
+        t_ref=t_ref,
+        ell_min=h_cut.ell_min,
+        ell_max=h_cut.ell_max
+    )
+    result['waveform'] = qnm_wm
+
+    # Also store the mismatch between the best-fit waveform and the data
+    result['mismatch'] = mismatch(
+        h_cut,
+        qnm_wm,
+        t0,
+        T,
+        spherical_modes
+    )
+
+    return result
+
+
+def qnm_modes(chi, M, mode_dict, dest=None, t0=0., t_ref=0., **kwargs):
     """
     WaveformModes object with multiple qnms, 0 elsewhere.
 
@@ -87,8 +316,8 @@ def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
         If passed, the storage to use for the WaveformModes.data.
         Must be the correct shape.
 
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
+    t0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t0.
 
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
@@ -121,7 +350,7 @@ def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
             )
 
             expiwt = np.exp(complex(0., -1.) * omega * (t - t_ref))
-            expiwt[t < t_0] = 0.
+            expiwt[t < t0] = 0.
             for _l, _m in LM:
                 if (_m == m_prime):
                     c_l = C[ells == _l]
@@ -133,14 +362,14 @@ def qnm_modes(chi, M, mode_dict, dest=None, t_0=0., t_ref=0., **kwargs):
         return data
 
     constructor_statement = \
-        'qnm_modes({0}, {1}, {2}, t_0={3}, t_ref={4}, **{5})'.format(
-            chi, M, mode_dict, t_0, t_ref, kwargs
+        'qnm_modes({0}, {1}, {2}, t0={3}, t_ref={4}, **{5})'.format(
+            chi, M, mode_dict, t0, t_ref, kwargs
         )
 
     return modes_constructor(constructor_statement, data_functor, **kwargs)
 
 
-def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0.,
+def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t0=0., t_ref=0.,
                  **kwargs):
     """
     WaveformModes object with multiple qnms, 0 elsewhere, with time
@@ -167,8 +396,8 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0.,
         If passed, the storage to use for the WaveformModes.data.
         Must be the correct shape.
 
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
+    t0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t0.
 
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
@@ -187,7 +416,7 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0.,
         M,
         mode_dict,
         dest=dest,
-        t_0=t_0,
+        t0=t0,
         t_ref=t_ref,
         t=t,
         ell_min=ell_min,
@@ -196,106 +425,7 @@ def qnm_modes_as(chi, M, mode_dict, W_other, dest=None, t_0=0., t_ref=0.,
     )
 
 
-def fit(W, chi, M,  mode_labels, spherical_modes=None, t_0=0., T=100,
-        t_ref=0.):
-    """
-    Uses a modification of the mode limited eigenvalue method from
-    arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
-
-    We modify the procedure by restricting the minimization of the mismatch
-    only over modes that we care about. These modes are selected as follows:
-    for every m, in mode_labels we find the maximum ell for which
-    some (ell, m, n , s) is in mode labels. This sets the ell_max for
-    that m. We don't consider modes with higher ell's in the mismatch
-    to minimize. We are not trying to model these high-ell spherical modes,
-    so how well the low-ell qnm modes fit these high-ell modes through
-    (spherical-spheroidal mixing) should not be part of the equation.
-    Thus we project them out of the NR data and QNM modes.
-
-    Parameters
-    ----------
-    W : WaveformModes object
-        Waveform to use for fitting QNM amplitudes.
-
-    chi : float
-        The dimensionless spin of the black hole, 0. <= chi < 1.
-
-    M : float
-        The mass of the black hole, M > 0.
-
-    mode_labels : list of tuples (l, m, n, sign)
-        List of modes to fit over.
-
-    spherical_modes : list of tuples (l,m), optional [Default: None]
-        A sequence of (l,m) modes to fit over. If None, all (l,m) modes in
-        model_labels are used.
-
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
-
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-
-    Returns
-    -------
-    res_mode_dict : dict
-        Dictionary of QNM modes with complex amplitudes.
-    """
-    # Dictionary to store the best-fit QNM amplitudes
-    res_mode_dict = {}
-
-    # TODO Default to all available spherical modes if None?
-    if spherical_modes is None:
-        spherical_modes = [(ell, m) for (ell, m, _, _) in mode_labels]
-
-    # List of all the m indices we're considering in this fit
-    m_list = []
-    for (_, m, _, _) in mode_labels:
-        if m not in m_list:
-            m_list.append(m)
-
-    # Window and shift the data
-    h_shifted = W.copy()[
-        np.argmin(abs(W.t - t_0)):np.argmin(abs(W.t - t_0 - T))+1, :
-    ]
-
-    # Break problem into one m at a time. The m's are decoupled, and the
-    # truncation in ell for each m is different.
-    for m in m_list:
-
-        # The QNMs with this value of m
-        mode_labels_m = [label for label in mode_labels if label[1] == m]
-
-        # The ell indices in the spherical harmonic modes which overlap with
-        # the current m
-        ell_list = [ell for ell, em in spherical_modes if em == m]
-
-        # The spherical harmonic modes with the current value of m
-        lm_list = [(ell, em) for ell, em in spherical_modes if em == m]
-
-        # Truncate all modes above ell_max_m for this m
-        ell_max_m = max(ell_list)
-        data_index_m = [sf.LM_index(l, m, h_shifted.ell_min) for l in ell_list]
-
-        B = np.zeros((len(h_shifted.t),len(lm_list),len(mode_labels_m)), dtype=complex)
-        
-        W_trunc = h_shifted[:,:ell_max_m+1]
-        A = W_trunc.data[:, data_index_m]
-        for mode_index, label in enumerate(mode_labels_m):
-            tmp_mode_dict = {label: 1.}
-            Q = qnm_modes_as(chi, M, tmp_mode_dict, W_trunc, 
-                             t_0=t_0, t_ref=t_ref)
-            B[:,:,mode_index] = Q.data[:,data_index_m]
-
-        A = np.reshape(A, len(W.t)*len(data_index_m))
-        B = np.reshape(B, (len(W.t)*len(data_index_m), len(mode_labels_m)))
-        C = np.linalg.lstsq(B, A, rcond=None)
-        for i, label in enumerate(mode_labels_m):
-            res_mode_dict[label] = C[0][i]
-        
-    return res_mode_dict
-
-def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0., 
+def fit_chi_M_and_modes(W, qnms, spherical_modes=None, t0=0., t_ref=0., 
                         maxiter=1000, xtol=1e-8, ftol=1e-8):    
     """
     Use scipy.optimize.minimize to find best fit spin, mass, and QNM amplitudes
@@ -306,15 +436,15 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
     W : WaveformModes object
         Waveform to use for fitting spin, mass, and QNM amplitudes
     
-    mode_labels : list of tuples (l, m, n, sign)
+    qnms : list of tuples (l, m, n, sign)
         List of modes to fit over. 
 
     spherical_modes : list of tuples (l,m), optional [Default: None]
         A sequence of (l,m) modes to fit over. If None, all (l,m) modes in
         model_labels are used.
     
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
+    t0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t0.
     
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
@@ -344,7 +474,7 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
 
     W_fitted_modes = W.copy()
     W_fitted_modes.data *= 0.
-    for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
+    for LM_mode in list(set([(mode[0], mode[1]) for mode in qnms])):
         W_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W_fitted_modes.ell_min)] = W.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W.ell_min)]
     
     def goodness(chi_M, *args):
@@ -352,12 +482,12 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
         M = chi_M[1]
         if chi < 0.0 or chi > 0.99 or M < 0.0 or M > 1.0:
             return 1e6
-        mode_dict = fit(W_fitted_modes, chi, M, mode_labels,
-                spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
+        mode_dict = fit(W_fitted_modes, chi, M, qnms,
+                spherical_modes=spherical_modes, t0=t0, t_ref=t_ref)
         Q = qnm_modes_as(chi, M, mode_dict, W_fitted_modes)
         Q_fitted_modes = Q.copy()
         Q_fitted_modes.data *= 0.
-        for LM_mode in list(set([(mode[0], mode[1]) for mode in mode_labels])):
+        for LM_mode in list(set([(mode[0], mode[1]) for mode in qnms])):
             Q_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q_fitted_modes.ell_min)] = Q.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q.ell_min)]
         diff = W_fitted_modes.copy()
         diff.data -= Q_fitted_modes.data
@@ -372,8 +502,8 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
     if (res.success):
         chi = res.x[0]
         M = res.x[1]
-        res_mode_dict = fit(W, chi, M, mode_labels,
-                            spherical_modes=spherical_modes, t_0=t_0, t_ref=t_ref)
+        res_mode_dict = fit(W, chi, M, qnms,
+                            spherical_modes=spherical_modes, t0=t0, t_ref=t_ref)
         return chi, M, res_mode_dict, res
     else:
         return None, None, None, res
@@ -382,7 +512,7 @@ def fit_chi_M_and_modes(W, mode_labels, spherical_modes=None, t_0=0., t_ref=0.,
 # Greedy-fit functions
 # --------------------
     
-def mode_power_order(W, topN=10, t_0=-np.Inf):
+def mode_power_order(W, topN=10, t0=-np.Inf):
     """Returns a list of topN indices sorted by power per mode for a waveform.
 
     Parameters
@@ -391,8 +521,8 @@ def mode_power_order(W, topN=10, t_0=-np.Inf):
 
     topN : int, optional [Default: 10]
 
-    t_0 : float, optional [Default: -np.Inf]
-        Only compute power after t_0.
+    t0 : float, optional [Default: -np.Inf]
+        Only compute power after t0.
 
     Returns
     -------
@@ -400,7 +530,7 @@ def mode_power_order(W, topN=10, t_0=-np.Inf):
       List of (l,m) indices, where the 0th row is the mode with the most
       power.
     """
-    sliced = W.data[W.t > t_0, :]
+    sliced = W.data[W.t > t0, :]
     return W.LM[np.argsort(np.sum(np.square(np.abs(sliced)),axis=0))][-1:-1-topN:-1]
 
 def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
@@ -454,7 +584,7 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     return new_modes
 
 def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max, 
-                       nmodes_to_report=None, initial_modes_dict={}, t_0=0.,
+                       nmodes_to_report=None, initial_modes_dict={}, t0=0.,
                        t_ref=0., T=90., n_max=7, interpolate=True, use_news_power=True,
                        retrograde=False):
     """Calculates the fraction of unmodeled power and mismatch for each number
@@ -490,8 +620,8 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
     initial_modes_dict : dictionary, optional [Default: {}]
         Dictionary keys are tuples (l,m,n,sign) and values are complex amplitudes.
 
-    t_0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t_0.
+    t0 : float, optional [Default: 0.]
+        Waveform model is 0 for t < t0.
 
     t_ref : float, optional [Default: 0.]
         Time at which amplitudes are specified.
@@ -541,10 +671,10 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
     if nmodes_to_report is None:
         nmodes_to_report = []
 
-    # Make sure that the waveform starts at t_0, otherwise
+    # Make sure that the waveform starts at t0, otherwise
     # inner_product returns faulty values due to interpolation issues
     if interpolate:
-        W = W[np.argmin(abs(W.t - t_0)):]
+        W = W[np.argmin(abs(W.t - t0)):]
     
     if use_news_power:
         if W.dataType == scri.h:
@@ -557,7 +687,7 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
             raise ValueError("W is not of type scri.h or scri.hdot")
     else:
         W_power_waveform = W.copy()
-    W_power = np.real(W_power_waveform.inner_product(W_power_waveform, t1=t_0))
+    W_power = np.real(W_power_waveform.inner_product(W_power_waveform, t1=t0))
         
     # Initially, the difference between the waveform and model is just
     # the waveform itself.
@@ -571,15 +701,15 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
 
         # Add one or two modes
         num_modes = len(W.LM)
-        loudest_lms = mode_power_order(diff, topN=num_modes, t_0=t_0)
+        loudest_lms = mode_power_order(diff, topN=num_modes, t0=t0)
             
         mode_dict = add_modes(mode_dict, loudest_lms, n_max, retrograde)
 
         # Build a ringdown model
-        mode_labels = list(mode_dict.keys())
-        mode_dict = fit(W, chi, M, mode_labels, spherical_modes=None, t_0=t_0, t_ref=t_ref)
+        qnms = list(mode_dict.keys())
+        mode_dict = fit(W, chi, M, qnms, spherical_modes=None, t0=t0, t_ref=t_ref)
 
-        Q = qnm_modes_as(chi, M, mode_dict, W, t_0=t_0, t_ref=t_ref)
+        Q = qnm_modes_as(chi, M, mode_dict, W, t0=t0, t_ref=t_ref)
 
         # How much power is unmodeled?
         if use_news_power:
@@ -590,12 +720,12 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
                 np.subtract(W.data, Q.data, out=diff.data)
         else:
             np.subtract(W.data, Q.data, out=diff.data)
-        diff_power = np.real(diff.inner_product(diff, t1=t_0))
+        diff_power = np.real(diff.inner_product(diff, t1=t0))
         frac_unmodeled_power = diff_power / W_power
 
         if i_mode+1 in nmodes_to_report:
             frac_unmodeled_powers.append(frac_unmodeled_power)
-            wf_mismatches.append(mismatch(W, Q, t_0, T,
+            wf_mismatches.append(mismatch(W, Q, t0, T,
                                                    spherical_modes=None))
             mode_dicts.append(mode_dict)
 
@@ -603,13 +733,13 @@ def pick_nmodes_greedy(W, chi, M, target_frac, num_modes_max,
             break # Don't need to add any more modes
 
     frac_unmodeled_powers.append(frac_unmodeled_power)
-    wf_mismatches.append(mismatch(W, Q, t_0, T, spherical_modes=None))
+    wf_mismatches.append(mismatch(W, Q, t0, T, spherical_modes=None))
     mode_dicts.append(mode_dict)
     # We've hit the max number of modes
     return mode_dicts, Q, diff, frac_unmodeled_powers, wf_mismatches
 
 def pick_modes_greedy(W, chi, M, target_frac, num_modes_max, 
-                      initial_modes_dict={}, t_0=0., t_ref=0., T=90., n_max=7, 
+                      initial_modes_dict={}, t0=0., t_ref=0., T=90., n_max=7, 
                       interpolate=True, use_news_power=True, retrograde=False):
     """Calculates the fraction of unmodeled power and mismatch for the
     num_modes_max number of modes.
@@ -622,7 +752,7 @@ def pick_modes_greedy(W, chi, M, target_frac, num_modes_max,
         num_modes_max, 
         nmodes_to_report=None,
         initial_modes_dict=initial_modes_dict,
-        t_0=t_0, 
+        t0=t0, 
         t_ref=t_ref,
         T=T,
         n_max=n_max,
