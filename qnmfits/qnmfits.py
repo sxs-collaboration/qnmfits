@@ -2,6 +2,7 @@ import numpy as np
 import spherical_functions as sf
 
 import scri
+import bisect
 
 from scipy.optimize import minimize
 from scri.sample_waveforms import modes_constructor
@@ -66,7 +67,7 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
 
 
 def qnm_WaveformModes(times, chi, M, qnm_amps, t0=0, t_ref=None, ell_min=2,
-                      ell_max=8):
+                      ell_max=8, t0_method='geq'):
 
     # If a reference time for the QNM amplitudes isn't given, use t0
     if t_ref is None:
@@ -91,7 +92,9 @@ def qnm_WaveformModes(times, chi, M, qnm_amps, t0=0, t_ref=None, ell_min=2,
         # Construct the pure QNM damped sinusoid. This has not yet been
         # weighted by the spherical-spheroidal mixing coefficients.
         h_qnm = A*np.exp(-1j*omega*(times - t_ref))
-        h_qnm[times < t0] = 0
+
+        if t0_method == 'geq':
+            h_qnm[times < t0] = 0
 
         # Loop through each spherical-harmonic mode in the final data array
         for ell_prime, m_prime in ell_m_list:
@@ -122,7 +125,8 @@ def qnm_WaveformModes(times, chi, M, qnm_amps, t0=0, t_ref=None, ell_min=2,
     return wm
 
 
-def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
+def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
+        t0_method='geq'):
     """
     Uses a modification of the mode limited eigenvalue method from
     arXiv:2004.08347 to find best fit qnm amplitudes to a waveform.
@@ -163,14 +167,39 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
     t_ref : float, optional [Default: None]
         The time at which the QNM amplitudes are defined. If None, t_ref = t0.
 
+    t0_method : str, optional [Default: geq]
+        A requested ringdown start time will in general lie between times on
+        the default time array (the same is true for the end time of the
+        analysis). There are different approaches to deal with this, which can
+        be specified here.
+
+        Options are:
+
+            - 'geq'
+                Take data at times greater than or equal to t0. Note that
+                we still treat the ringdown start time as occuring at t0,
+                so the best fit coefficients are defined with respect to
+                t0.
+
+            - 'closest'
+                Identify the data point occuring at a time closest to t0,
+                and take times from there.
+
     Returns
     -------
     result : dict
-        Dictionary with keys 'amplitudes' (dictionary of best-fit complex QNM
-        amplitudes for each mode in qnms), 'waveform' (WaveformModes object of
-        the best-fit ringdown waveform), 'mismatch' (the mismatch between the
-        best-fit ringdown waveform and data, computed over the requested
-        spherical_modes).
+        A dictionary of useful information related to the fit. Keys include:
+
+            - 'mismatch' : float
+                The mismatch between the best-fit ringdown waveform and data,
+                computed over the requested spherical_modes.
+            - 'amplitudes' : dict
+                The best-fit complex amplitudes. There is a complex amplitude
+                for each ringdown mode.
+            - 'data' : WaveformModes
+                The (masked) data used in the fit.
+            - 'model': WaveformModes
+                The best-fit model waveform.
     """
     if t_ref is None:
         t_ref = t0
@@ -192,9 +221,19 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
             m_list.append(m)
 
     # Window the data
-    h_cut = data.copy()[
-        np.argmin(abs(data.t - t0)):np.argmin(abs(data.t - t0 - T))+1, :
-    ]
+    if t0_method == 'geq':
+        start_index = bisect.bisect_left(data.t, t0)
+        end_index = bisect.bisect_left(data.t, t0+T) - 1
+        h_cut = data.copy()[start_index:end_index, :]
+
+    elif t0_method == 'closest':
+        h_cut = data.copy()[
+            np.argmin(abs(data.t - t0)):np.argmin(abs(data.t - t0 - T))+1, :
+        ]
+
+    else:
+        print("""Requested t0_method is not valid. Please choose between 'geq'
+              and 'closest'""")
 
     # Break problem into one m at a time. The m's are decoupled, and the
     # truncation in ell for each m is different.
@@ -228,27 +267,41 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
             dtype=complex
         )
 
+        omega_dict = {}
+
         # Loop over each QNM in our model with the current value of m
         for qnm_index, label in enumerate(qnms_m):
 
-            # When we call qnm_WaveformModes with a single QNM (given by
-            # label) with unity amplitude, the mixing of that QNM into every
-            # spherical-harmonic mode is computed for us
-            qnm_wm = qnm_WaveformModes(
-                h_cut.t,
-                chi,
-                M,
-                {label: 1},
-                t0=t0,
-                t_ref=t_ref,
-                ell_min=h_trunc.ell_min,
-                ell_max=h_trunc.ell_max
+            # Initialize the data array
+            qnm_data = np.zeros(
+                (len(h_cut.t), len(spherical_modes_m)),
+                dtype=complex
             )
 
-            # qnm_wm is a WaveformModes object with the same shape as h_trunc,
-            # so we can index the requested spherical-harmonic modes with
-            # data_index_m
-            a[:, :, qnm_index] = qnm_wm.data[:, data_index_m]
+            # Get the complex QNM frequencies omega and the spherical-
+            # spheroidal mixing coefficients C. C is a list of mixing
+            # coefficients, corresponding to different ell values (given by
+            # C_ells).
+            omega, C, C_ells = qnm_from_tuple(label, chi, M)
+
+            omega_dict[label] = omega
+
+            # Construct the pure QNM damped sinusoid. This has not yet been
+            # weighted by the spherical-spheroidal mixing coefficients.
+            h_qnm = np.exp(-1j*omega*(h_cut.t - t0))
+
+            # Loop through each spherical-harmonic mode in the final data array
+            for i, ell_prime in enumerate(spherical_ell_list):
+
+                # Get the mixing coefficient between the (ell, m, n) QNM and
+                # the (ell', m') sppherical-harmonic mode
+                C_ell = C[C_ells == ell_prime][0]
+
+                # Add the weighted QNM to the appropriate spherical mode
+                qnm_data[:, i] += C_ell*h_qnm
+
+            # qnm_data has shape (len(h_cut.t), len(spherical_modes_m))
+            a[:, :, qnm_index] = qnm_data
 
         # Reshape the arrays for np.lstsq
 
@@ -265,7 +318,8 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
 
         # Store the complex QNM amplitudes
         for i, label in enumerate(qnms_m):
-            qnm_amps[label] = amplitudes[i]
+            qnm_amps[label] = \
+                amplitudes[i]*np.exp(-1j*omega_dict[label]*(t_ref-t0))
 
     result['amplitudes'] = qnm_amps
 
@@ -280,7 +334,7 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
         ell_min=h_cut.ell_min,
         ell_max=h_cut.ell_max
     )
-    result['waveform'] = qnm_wm
+    result['model'] = qnm_wm
 
     # Also store the mismatch between the best-fit waveform and the data
     result['mismatch'] = mismatch(
@@ -290,6 +344,8 @@ def fit(data, chi, M, qnms, spherical_modes=None, t0=0, T=100, t_ref=None):
         T,
         spherical_modes
     )
+
+    result['data'] = h_cut
 
     return result
 
