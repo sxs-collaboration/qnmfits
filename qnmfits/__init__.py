@@ -1,6 +1,7 @@
 """Fitting of quasinormal modes to ringdown waveforms."""
 
-__version__ = "2024.0.0"
+# YYYY.MINOR.MICRO
+__version__ = "2025.0.0"
 
 from .cce import cce
 from .qnmfits import *
