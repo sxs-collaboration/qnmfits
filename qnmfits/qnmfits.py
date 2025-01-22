@@ -210,7 +210,8 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
         modes use sign=-1.
 
     spherical_modes : list of (ell, m) tuples, optional [Default: None]
-        List of spherical-harmonic modes to fit the ringdown model to.
+        List of spherical-harmonic modes to fit the ringdown model to. If None,
+        the fit is performed over all available spherical modes in the data.
 
     t0 : float, optional [Default: 0]
         The ringdown model start time.
@@ -249,6 +250,9 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
             - 'amplitudes' : dict
                 The best-fit complex amplitudes. There is a complex amplitude
                 for each ringdown mode.
+            - 'frequencies' : dict
+                The complex QNM frequencies used in the model. There is a
+                complex frequency for each ringdown mode.
             - 'data' : WaveformModes
                 The (masked) data used in the fit.
             - 'model': WaveformModes
@@ -265,10 +269,9 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
     # Dictionary to store the complex QNM frequencies
     qnm_freqs = {}
 
-    # TODO Default to all available spherical modes if None?
-    # spherical_modes = sf.LM_range(data.ell_min, data.ell_max)
+    # Default to all available spherical modes if None
     if spherical_modes is None:
-        spherical_modes = [(ell, m) for (ell, m, _, _) in qnms]
+        spherical_modes = sf.LM_range(data.ell_min, data.ell_max)
 
     # List of all the m indices we're considering in this fit
     m_list = []
