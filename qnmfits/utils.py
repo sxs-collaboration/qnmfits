@@ -1,98 +1,65 @@
-import os
-
-import sxs
-import scri
-from scri.asymptotic_bondi_data.map_to_superrest_frame import (
-    MT_to_WM, map_to_superrest_frame
-)
-import quaternion
-
 import numpy as np
+import spherical_functions as sf
+
+import scri
 import pickle
-from scipy.interpolate import CubicSpline
-from scipy.optimize import minimize_scalar
-
-from .cce import cce
-cce = cce()
 
 
-def n_modes(ell_max, ell_min=2):
+def dict_to_WaveformModes(times, data, ell_min=2, ell_max=None):
     """
-    Calculates the number of spherical-harmonic modes between ell_min and
-    ell_max.
+    Converts a dictionary of data arrays to a scri WaveformModes object.
 
     Parameters
     ----------
-    ell_max : int
-        The maximum value of ell.
+    times : array
+        The time array for the data.
+
+    data : dictionary
+        A dictionary of data arrays. The keys are (ell, m) tuples.
 
     ell_min : int, optional [Default: 2]
-        The minimum value of ell.
+        The minimum ell value to include in the WaveformModes object.
+
+    ell_max : int, optional [Default: None]
+        The maximum ell value to include in the WaveformModes object. If not
+        specified, the maximum ell value in the dictionary will be used.
 
     Returns
     -------
-    n : int
-        The number of spherical-harmonic modes between ell_min and ell_max.
+    wm : scri WaveformModes object
     """
-    return sum([2*ell+1 for ell in range(ell_min, ell_max+1)])
+    # If not specified, obtain ell_max from the dictionary keys
+    if ell_max is None:
+        ell_max = max([ell for ell, _ in data.keys()])
+
+    # The spherical-harmonic mode (ell, m) indices for the requested ell_min
+    # and ell_max
+    ell_m_list = sf.LM_range(ell_min, ell_max)
+
+    # Initialize the WaveformModes data array
+    wm_data = np.zeros((len(times), len(ell_m_list)), dtype=complex)
+
+    # Fill the WaveformModes data array
+    for i, (ell, m) in enumerate(ell_m_list):
+        if (ell, m) in data.keys():
+            wm_data[:, i] = data[(ell, m)]
+
+    # Construct the WaveformModes object
+    wm = scri.WaveformModes(
+        dataType=scri.h,
+        t=times,
+        data=wm_data,
+        ell_min=ell_min,
+        ell_max=ell_max,
+        frameType=scri.Inertial,
+        r_is_scaled_out=True,
+        m_is_scaled_out=True
+    )
+
+    return wm
 
 
-def to_WaveformModes(times, data, ell_max, ell_min=2):
-    """
-    Convert a dictionary of spherical-harmonic modes or a NumPy array to a
-    WaveformModes object.
-
-    Parameters
-    ----------
-    times : array_like
-        The times at which the waveforms are evaluated.
-
-    data : dict or ndarray
-        The spherical-harmonic waveform modes to convert to a WaveformModes
-        object. If data is a dictionary, the keys are (ell,m) tuples and the
-        values are the waveform data. If data is a NumPy array, the columns
-        must correspond to the (ell,m) modes in the specific order required by
-        scri: see the scri.WaveformModes documentation for details.
-
-    ell_max : int
-        The maximum value of ell included in the data.
-
-    ell_min : int, optional
-        The minimum value of ell included in the data. The default is 2.
-
-    Returns
-    -------
-    h : WaveformModes object
-        The spherical-harmonic waveform modes in the WaveformModes format.
-    """
-    # Ensure data is in the correct format
-    formatted_data = np.zeros((len(times), n_modes(ell_max, ell_min)), dtype=complex)
-
-    if type(data) == dict:
-        for i, (ell,m) in enumerate([(ell,m) for ell in range(ell_min, ell_max+1) for m in range(-ell,ell+1)]):
-            if (ell,m) in data.keys():
-                formatted_data[:,i] = data[ell,m]
-
-    elif type(data) == np.ndarray:
-        assert data.shape == (len(times), n_modes(ell_max, ell_min)), "Data array is not the correct shape."
-        formatted_data = data
-
-    # Convert to a WaveformModes object
-    h = scri.WaveformModes(
-        dataType = scri.h,
-        t = times,
-        data = formatted_data,
-        ell_min = ell_min,
-        ell_max = ell_max,
-        frameType = scri.Inertial,
-        r_is_scaled_out = True,
-        m_is_scaled_out = True,
-        )
-
-    return h
-
-
-def sxs_to_scri_WaveformModes(h_sxs):
+def sxs_to_scri_WaveformModes(wm_sxs):
     """
     Converts an sxs WaveformModes object to a scri WaceformModes object.
 
@@ -105,18 +72,94 @@ def sxs_to_scri_WaveformModes(h_sxs):
     h : scri WaveformModes object
     """
 
-    h = scri.WaveformModes(
+    wm = scri.WaveformModes(
         dataType=scri.h,
-        t=h_sxs.t,
-        data=h_sxs.data,
-        ell_min=h_sxs.ell_min,
-        ell_max=h_sxs.ell_max,
+        t=wm_sxs.t,
+        data=wm_sxs.data,
+        ell_min=wm_sxs.ell_min,
+        ell_max=wm_sxs.ell_max,
         frameType=scri.Inertial,
         r_is_scaled_out=True,
         m_is_scaled_out=True
     )
 
-    return h
+    return wm
+
+
+def to_superrest_frame(abd, t0, window=True):
+    """
+    Map an AsymptoticBondiData object to the superrest frame.
+
+    Parameters
+    ----------
+    abd : AsymptoticBondiData
+        The simulation data.
+
+    t0 : float
+        The time at which the superrest frame is defined. For ringdown
+        studies, about 300M after the time of peak strain is recommended.
+
+    window : bool, optional [Default: True]
+        Whether to window the data to speed up the transformation. Waveform
+        data 100M before the peak of the strain is removed.
+
+    Returns
+    -------
+    abd_prime : AsymptoticBondiData
+        The simulation data in the superrest frame.
+    """
+    # The extraction radius of the simulation
+    R = int(abd.metadata['preferred_R'])
+
+    # Check if the transformation to the superrest frame has already been
+    # done
+    wf_path = \
+        abd.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t0}_superrest.pickle'
+
+    if not wf_path.is_file():
+
+        # Window the data to speed up the transformation
+        if window:
+
+            # Shift the zero time to be at the peak of the strain
+            time_shift = abd.t[np.argmax(abd.h.norm())]
+            abd.t -= time_shift
+
+            # The scri interpolation removes the metadata and sim_dir
+            # attributes, so we need to store them temporarily
+            metadata = abd.metadata
+            sim_dir = abd.sim_dir
+
+            new_times = abd.t[abd.t > -100]
+            abd = abd.interpolate(new_times)
+
+            # Restore the metadata and sim_dir attributes
+            abd.metadata = metadata
+            abd.sim_dir = sim_dir
+
+            # Undo the time shift
+            abd.t += time_shift
+
+        # Convert to the superrest frame
+        abd_prime, best_BMS_transformation, best_rel_err = \
+            abd.map_to_superrest_frame(t_0=t0)
+
+        # Save to file
+        with open(wf_path, 'wb') as f:
+            pickle.dump(abd_prime, f)
+
+    # Load from file
+    with open(wf_path, 'rb') as f:
+        abd_prime = pickle.load(f)
+
+    return abd_prime
+
+
+
+
+
+
+
 
 
 def get_CCE_radii(simulation_dir, radius_index = None):
@@ -141,6 +184,7 @@ def get_CCE_radii(simulation_dir, radius_index = None):
         return radii[radius_index:radius_index+1]
     else:
         return radii
+
 
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
         sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
@@ -202,6 +246,7 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     W.t = W.t - W.t[trim_ind]
     return md, W, sxs_id
 
+
 def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     """Returns an AsymptoticBondiData object and CCE waveform. 
 
@@ -246,55 +291,6 @@ def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     h_CCE.t -= h_CCE.t[trim_ind]
     return abd_CCE, h_CCE
 
-def to_superrest_frame(abd_CCE, t_0=350., padding_time=100, save=False,
-                       sim_name=None):
-    """Maps waveform into the BMS superrest frame of the remnant black hole.
-
-    Parameters
-    ----------
-    abd_CCE : AsymptoticBondiData object
-
-    t_0 : float, optional [Default: 350.]
-        Time to map to the superrest frame of the remnant black hole. For ringdown
-        studies, about 300M after the time of peak strain is recommended.
-
-    padding_time : float, optional [Default: 100.]
-        Amount by which to pad around t_0 to speed up computations.
-
-    save : bool, optional [Default: False]
-        If True, the supertranslated waveform will be saved in a directory
-        called 'BMS_data'.
-
-    sim_name : str, optional [Default: None]
-        Use if saving the waveform. Format is h_{sim_name}_superrest.h5
-
-    Returns
-    -------
-    h_superrest : WaveformModes object
-        Waveform in the BMS superrest frame.
-
-    """
-
-    # The extraction radius of the simulation
-    R = int(abd_CCE.metadata['preferred_R'])
-
-    # Check if the transformation to the superrest frame has already been done
-    wf_path = abd_CCE.sim_dir / f'rhoverM_BondiCce_R{R:04d}_t0{t_0}_superrest.pickle'
-
-    if not wf_path.is_file():
-        abd_superrest, transformations = map_to_superrest_frame(abd_CCE, t_0=t_0,
-                                                        padding_time=padding_time)
-        # Save to file
-        with open(wf_path, 'wb') as f:
-            pickle.dump(abd_superrest, f)
-
-    # Load from file
-    else: 
-        with open(wf_path, 'rb') as f:
-            abd_superrest = pickle.load(f)
-   
-    h_superrest = MT_to_WM(2.0*abd_superrest.sigma.bar)
-    return abd_superrest, h_superrest 
 
 def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
     """Waveforms are assumed to have z-axis aligned by final spin or something else, 
@@ -353,6 +349,7 @@ def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False):
         
     return resolution_mismatch, rotation_LR
 
+
 def align_lev(W, W_LR, t0, mode=None, news=False):
     """Rotate low resolution waveform to match the higher resolution waveform.
 
@@ -386,6 +383,7 @@ def align_lev(W, W_LR, t0, mode=None, news=False):
     W_rot = W_interp.copy()
     W_rot.rotate_physical_system(q);
     return W_rot
+
 
 def rotate_wf(W, chi_f):
     """Rotates waveform to be aligned with the positive z-axis.
