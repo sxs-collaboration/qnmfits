@@ -237,10 +237,6 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
             sxs_id = sxs_id[0]
         else:
             sxs_id = 'missing_sxs_id'
-    else:
-        catalog = sxs.load("catalog")
-        md = sxs.load(f"{sxs_id}/Lev{lev_N}/metadata.json")
-        W = sxs.load(f"{sxs_id}/Lev{lev_N}/rhOverM", extrapolation_order=ext_N)
 
     trim_ind = W.max_norm_index()
     W.t = W.t - W.t[trim_ind]
@@ -290,99 +286,6 @@ def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     trim_ind = h_CCE.max_norm_index()
     h_CCE.t -= h_CCE.t[trim_ind]
     return abd_CCE, h_CCE
-
-
-def get_resolution_mismatches(W, W_LR, t0_arr, mode=None, news=False): 
-    """Waveforms are assumed to have z-axis aligned by final spin or something else, 
-    and times aligned as well. Rotation about z-axis is done to minimize mismatch. 
-
-    Parameters
-    ----------
-    W : WaveformModes object
-
-    W_LR : WaveformModes object
-        Waveform with lower resolution
-
-    t0_arr : float array
-        Waveform model is 0 for t < t0_arr values
-
-    mode : tuple, optional [Default: None]
-        (ell, m) mode tuple to calculate specific mode mismatch instead of all-mode
-        mismatch.
-
-    news : bool, optional [Default: False]
-        Use the strain or news domain to calculate mismatches
-        
-    Returns
-    -------
-    resolution_mismatch : list of floats
-        Minimized NR resolution mismatch at each time, t0
-    
-    rotation_LR : list of floats
-        Minimized phi rotations at each time, t0 
-    """
-    resolution_mismatch = []
-    rotation_LR = []
-    W_interp = W.copy() 
-    W_interp.data = CubicSpline(W_LR.t, W_LR.data.real)(W.t) \
-                    + 1.j*CubicSpline(W_LR.t, W_LR.data.imag)(W.t) 
-    for t0 in t0_arr: 
-        W_shifted = W.copy()[np.argmin(abs(W.t - t0)):np.argmin(abs(W.t - 90))+1,:] 
-        W_shifted.t = W_shifted.t - W_shifted.t[0] 
-        W_LR_shifted = W_interp.copy()[np.argmin(abs(W_interp.t - t0))
-                                       :np.argmin(abs(W_interp.t - 90))+1,:] 
-        W_LR_shifted.t = W_LR_shifted.t - W_LR_shifted.t[0]
-        if news == True:
-            W_shifted.data = W_shifted.data_dot
-            W_shifted.dataType = scri.hdot
-            W_LR_shifted.data = W_LR_shifted.data_dot
-            W_LR_shifted.dataType = scri.hdot
-        def mism(phi):
-            q = quaternion.from_rotation_vector([0,0,phi])
-            W_rot = W_LR_shifted.copy()
-            W_rot.rotate_physical_system(q);
-            return waveform_mismatch(W_shifted, W_rot, 0., mode)
-        
-        res = minimize_scalar(mism, bounds=(0,2*np.pi))
-        resolution_mismatch.append(res.fun)
-        rotation_LR.append(res.x)
-        
-    return resolution_mismatch, rotation_LR
-
-
-def align_lev(W, W_LR, t0, mode=None, news=False):
-    """Rotate low resolution waveform to match the higher resolution waveform.
-
-    Parameters
-    ----------
-    W : WaveformModes object
-
-    W_LR : WaveformModes object
-        Waveform with lower resolution.
-
-    t0 : float
-        Waveform model is 0 for t < t0
-    
-    mode : tuple, optional [Default: None]
-        (ell, m) mode tuple to calculate specific mode mismatch instead of all-mode
-        mismatch.
-
-    news : bool, optional [Default: False]
-        Use the strain or news domain to calculate mismatches.
-    
-    Returns
-    -------
-    W_rot : WaveformModes object
-        Rotated waveform.
-    """
-    mism, phi = get_resolution_mismatches(W, W_LR, [t0], mode, news)
-    W_interp = W.copy() 
-    W_interp.data = CubicSpline(W_LR.t, W_LR.data.real)(W.t) \
-                    + 1.j*CubicSpline(W_LR.t, W_LR.data.imag)(W.t) 
-    q = quaternion.from_rotation_vector([0,0,phi[0]])
-    W_rot = W_interp.copy()
-    W_rot.rotate_physical_system(q);
-    return W_rot
 
 
 def rotate_wf(W, chi_f):
