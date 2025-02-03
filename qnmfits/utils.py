@@ -154,37 +154,30 @@ def to_superrest_frame(abd, t0, window=True):
 
     return abd_prime
 
+def rotate_wf(W, chi_f):
+    """Rotates waveform to be aligned with the positive z-axis.
 
-
-
-
-
-
-
-
-def get_CCE_radii(simulation_dir, radius_index = None):
-    """Returns CCE radii of a simulation.
-
-    Parameters
+    Paremeters
     ----------
-    simulation_dir : str
-        Directory where simulation is located
+    W : WaveformModes object
 
-    radius_index : int, optional [Default: None]
+    chi_f : array
+        Remnant black hole spin vector in (x,y,z) directions.
 
     Returns
     -------
-    radii : list of strings
-        Simulation radii
+    W : WaveformModes object
+        Rotated waveform.
     """
-    CCE_files = [filename for filename in os.listdir(simulation_dir) if 'rhOverM' in filename and '.h5' in filename]
-    radii = [filename.split('R')[1][:4] for filename in CCE_files]
-    radii.sort(key=float)
-    if radius_index != None:
-        return radii[radius_index:radius_index+1]
-    else:
-        return radii
+    th_z = np.arccos(chi_f[2]/np.linalg.norm(chi_f))
+    r_dir = np.cross([0,0,1],chi_f)
+    r_dir = th_z * r_dir / np.linalg.norm(r_dir)
+    q = quaternion.from_rotation_vector(-r_dir)
+    W.rotate_physical_system(q);
+    return W
 
+
+### Code below is for loading waveform data from existing files in a computer. ###
 
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
         sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
@@ -242,6 +235,29 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     W.t = W.t - W.t[trim_ind]
     return md, W, sxs_id
 
+def get_CCE_radii(simulation_dir, radius_index = None):
+    """Returns CCE radii of a simulation.
+
+    Parameters
+    ----------
+    simulation_dir : str
+        Directory where simulation is located
+
+    radius_index : int, optional [Default: None]
+
+    Returns
+    -------
+    radii : list of strings
+        Simulation radii
+    """
+    CCE_files = [filename for filename in os.listdir(simulation_dir) if 'rhOverM' in filename and '.h5' in filename]
+    radii = [filename.split('R')[1][:4] for filename in CCE_files]
+    radii.sort(key=float)
+    if radius_index != None:
+        return radii[radius_index:radius_index+1]
+    else:
+        return radii
+    
 
 def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     """Returns an AsymptoticBondiData object and CCE waveform. 
@@ -286,26 +302,3 @@ def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     trim_ind = h_CCE.max_norm_index()
     h_CCE.t -= h_CCE.t[trim_ind]
     return abd_CCE, h_CCE
-
-
-def rotate_wf(W, chi_f):
-    """Rotates waveform to be aligned with the positive z-axis.
-
-    Paremeters
-    ----------
-    W : WaveformModes object
-
-    chi_f : array
-        Remnant black hole spin vector in (x,y,z) directions.
-
-    Returns
-    -------
-    W : WaveformModes object
-        Rotated waveform.
-    """
-    th_z = np.arccos(chi_f[2]/np.linalg.norm(chi_f))
-    r_dir = np.cross([0,0,1],chi_f)
-    r_dir = th_z * r_dir / np.linalg.norm(r_dir)
-    q = quaternion.from_rotation_vector(-r_dir)
-    W.rotate_physical_system(q);
-    return W
