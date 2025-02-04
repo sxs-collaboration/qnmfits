@@ -562,7 +562,8 @@ def fit_mass_spin(data, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
     return result
 
 
-# ---
+# Greedy-fit functions
+# --------------------
 
 
 def qnm_modes(chif, M, mode_dict, dest=None, t0=0., t_ref=0., **kwargs):
@@ -696,9 +697,6 @@ def qnm_modes_as(chif, M, mode_dict, W_other, dest=None, t0=0., t_ref=0.,
     )
 
 
-# Greedy-fit functions
-# --------------------
-
 def mode_power_order(W, topN=10, t0=-np.Inf):
     """Returns a list of topN indices sorted by power per mode for a waveform.
 
@@ -718,7 +716,10 @@ def mode_power_order(W, topN=10, t0=-np.Inf):
       power.
     """
     sliced = W.data[W.t > t0, :]
-    return W.LM[np.argsort(np.sum(np.square(np.abs(sliced)),axis=0))][-1:-1-topN:-1]
+    return W.LM[
+        np.argsort(np.sum(np.square(np.abs(sliced)), axis=0))
+    ][-1:-1-topN:-1]
+
 
 def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     """
@@ -726,36 +727,37 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     loudest_lm spherical harmonic mode. The newly added mode will
     have the lowest overtone number which is not yet present in
     modes_so_far as long as n<n_max. If retrograde is False, only
-    prograde modes are added except when m is 0, where both 
-    both prograde and retrograde modes are added. If retrograde is 
+    prograde modes are added except when m is 0, where both
+    both prograde and retrograde modes are added. If retrograde is
     True, both prograde and retrograde modes are always added.
 
     Parameters
     ----------
     modes_so_far_dict : dict
-         Dictionary keys are tuples (l,m,n,sign) and values are complex amplitudes.
-         
+         Dictionary keys are tuples (l,m,n,sign) and values are complex
+         amplitudes.
+
     loudest_lms : list of tuples (l,m)
       *Spherical* harmonic indices in order of loudest first
-    
+
     n_max : int, optional [Default: 7]
         Maximum overtone number to include in fits (includes n_max).
-    
+
     retrograde : boolean, optional [Default: False]
         All retrograde QNMs included if True, else only prograde mode is added
         except for m=0, where both are always added.
-         
+
     Returns
     -------
     new_modes : dict
     """
     new_modes = modes_so_far_dict
-    #Loop through loudest_lms till we find a mode we can add
+    # Loop through loudest_lms till we find a mode we can add
     for loudest_l, loudest_m in loudest_lms:
         ns_so_far = list({n for (l, m, n, _) in modes_so_far_dict.keys()
-                          if ((l==loudest_l) and (m==loudest_m))})
+                          if ((l == loudest_l) and (m == loudest_m))})
 
-        max_n_so_far = np.max(ns_so_far) if len(ns_so_far)>0 else -1
+        max_n_so_far = np.max(ns_so_far) if len(ns_so_far) > 0 else -1
         new_n = max_n_so_far + 1
 
         if new_n <= n_max:
@@ -766,18 +768,22 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
                 new_modes[(loudest_l, loudest_m, new_n,
                            int(np.sign(loudest_m)))] = None
             break
-        elif new_n > n_max and (loudest_l, loudest_m) == (loudest_lms[-1][0], loudest_lms[-1][1]):
+        elif (
+            new_n > n_max and
+            (loudest_l, loudest_m) == (loudest_lms[-1][0], loudest_lms[-1][1])
+        ):
             print("Cannot find a valid mode to add.")
     return new_modes
 
 
-def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max, 
+def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
                        nmodes_to_report=None, initial_modes_dict={}, t0=0.,
-                       t_ref=0., T=90., n_max=7, interpolate=True, use_news_power=True,
-                       retrograde=False):
-    """Calculates the fraction of unmodeled power and mismatch for each number
-    of modes in nmodes_to_report. By default, the power is calculated using the News
-    function. 
+                       t_ref=0., T=90., n_max=7, interpolate=True,
+                       use_news_power=True, retrograde=False):
+    """
+    Calculates the fraction of unmodeled power and mismatch for each number
+    of modes in nmodes_to_report. By default, the power is calculated using the
+    News function.
 
     Note that if retrograde is True, one (ell,m,n) mode is defined as including
     both prograde and retrograde solutions of (ell,m,n). If retrograde is
@@ -806,7 +812,8 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
         List of modes to append on the way to num_modes_max.
 
     initial_modes_dict : dictionary, optional [Default: {}]
-        Dictionary keys are tuples (l,m,n,sign) and values are complex amplitudes.
+        Dictionary keys are tuples (l,m,n,sign) and values are complex
+        amplitudes.
 
     t0 : float, optional [Default: 0.]
         Waveform model is 0 for t < t0.
@@ -863,7 +870,7 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
     # inner_product returns faulty values due to interpolation issues
     if interpolate:
         W = W[np.argmin(abs(W.t - t0)):]
-    
+
     if use_news_power:
         if W.dataType == scri.h:
             W_power_waveform = W.copy()
@@ -876,7 +883,7 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
     else:
         W_power_waveform = W.copy()
     W_power = np.real(W_power_waveform.inner_product(W_power_waveform, t1=t0))
-        
+
     # Initially, the difference between the waveform and model is just
     # the waveform itself.
     diff = W_power_waveform.copy()
@@ -890,12 +897,15 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
         # Add one or two modes
         num_modes = len(W.LM)
         loudest_lms = mode_power_order(diff, topN=num_modes, t0=t0)
-            
+
         mode_dict = add_modes(mode_dict, loudest_lms, n_max, retrograde)
 
         # Build a ringdown model
         qnms = list(mode_dict.keys())
-        mode_dict = fit(W, chif, M, qnms, spherical_modes=None, t0=t0, t_ref=t_ref)
+        best_fit = fit(
+            W, chif, M, qnms, spherical_modes=None, t0=t0, t_ref=t_ref
+        )
+        mode_dict = best_fit['amplitudes']
 
         Q = qnm_modes_as(chif, M, mode_dict, W, t0=t0, t_ref=t_ref)
 
@@ -913,12 +923,11 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
 
         if i_mode+1 in nmodes_to_report:
             frac_unmodeled_powers.append(frac_unmodeled_power)
-            wf_mismatches.append(mismatch(W, Q, t0, T,
-                                                   spherical_modes=None))
+            wf_mismatches.append(mismatch(W, Q, t0, T, spherical_modes=None))
             mode_dicts.append(mode_dict)
 
         if (frac_unmodeled_power < target_frac):
-            break # Don't need to add any more modes
+            break  # Don't need to add any more modes
 
     frac_unmodeled_powers.append(frac_unmodeled_power)
     wf_mismatches.append(mismatch(W, Q, t0, T, spherical_modes=None))
@@ -926,26 +935,29 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
     # We've hit the max number of modes
     return mode_dicts, Q, diff, frac_unmodeled_powers, wf_mismatches
 
-def pick_modes_greedy(W, chif, M, target_frac, num_modes_max, 
-                      initial_modes_dict={}, t0=0., t_ref=0., T=90., n_max=7, 
+
+def pick_modes_greedy(W, chif, M, target_frac, num_modes_max,
+                      initial_modes_dict={}, t0=0., t_ref=0., T=90., n_max=7,
                       interpolate=True, use_news_power=True, retrograde=False):
-    """Calculates the fraction of unmodeled power and mismatch for the
+    """
+    Calculates the fraction of unmodeled power and mismatch for the
     num_modes_max number of modes.
     """
     mode_dict, Q, diff, power, mismatch = pick_nmodes_greedy(
-        W, 
-        chif, 
-        M, 
+        W,
+        chif,
+        M,
         target_frac,
-        num_modes_max, 
+        num_modes_max,
         nmodes_to_report=None,
         initial_modes_dict=initial_modes_dict,
-        t0=t0, 
+        t0=t0,
         t_ref=t_ref,
         T=T,
         n_max=n_max,
         interpolate=interpolate,
         use_news_power=use_news_power,
-        retrograde=retrograde)
-    
+        retrograde=retrograde
+    )
+
     return mode_dict[0], Q, diff, power[0], mismatch[0]
