@@ -6,7 +6,6 @@ import bisect
 
 from scipy.optimize import minimize
 from scri.sample_waveforms import modes_constructor
-from quaternion.calculus import indefinite_integral as integrate
 
 from .read_qnms import qnm_from_tuple
 
