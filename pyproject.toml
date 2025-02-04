@@ -1,6 +1,7 @@
 [project]
 name = "qnmfits"
-dynamic = ["version", "description"]
+dynamic = ["version"]
+description = "Fitting of quasinormal modes to ringdown waveforms."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
