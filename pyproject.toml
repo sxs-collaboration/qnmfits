@@ -17,7 +17,8 @@ classifiers = [
   ]
 dependencies = [
   "scri <= 2022.9.0",
-  "qnm >= 0.4.3"
+  "qnm >= 0.4.3",
+  "tqdm"
   ]
 
 [project.urls]
