@@ -1,8 +1,14 @@
 import numpy as np
 import spherical_functions as sf
 
+import os
 import scri
+import sxs
 import pickle
+import quaternion
+
+from .cce import cce
+cce = cce()
 
 
 def dict_to_WaveformModes(times, data, ell_min=2, ell_max=None):
@@ -154,6 +160,7 @@ def to_superrest_frame(abd, t0, window=True):
 
     return abd_prime
 
+
 def rotate_wf(W, chi_f):
     """Rotates waveform to be aligned with the positive z-axis.
 
@@ -170,17 +177,17 @@ def rotate_wf(W, chi_f):
         Rotated waveform.
     """
     th_z = np.arccos(chi_f[2]/np.linalg.norm(chi_f))
-    r_dir = np.cross([0,0,1],chi_f)
+    r_dir = np.cross([0, 0, 1], chi_f)
     r_dir = th_z * r_dir / np.linalg.norm(r_dir)
     q = quaternion.from_rotation_vector(-r_dir)
-    W.rotate_physical_system(q);
+    W.rotate_physical_system(q)
     return W
 
 
-### Code below is for loading waveform data from existing files in a computer. ###
+# Code below is for loading waveform data from existing files in a computer.
 
 def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
-        sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
+                    sxs_id='SXS:BBH:0305', lev_N=6, ext_N=2):
     """Returns metadata, extrapolated waveform, and sxs id.
 
     Parameters
@@ -218,11 +225,15 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     sxs_id : string
         Name of this simulation
     """
-    if use_sxs == False and ext_dir == None and wf_path == None:
-        raise TypeError('Set use_sxs=True or give directory and path name to'\
-                ' the waveform data')
-    if use_sxs == False:
-        md = sxs.metadata.Metadata.from_file(f'{ext_dir}metadata.txt', cache_json=False)
+    if use_sxs is False and ext_dir is None and wf_path is None:
+        raise TypeError(
+            'Set use_sxs=True or give directory and path name to the waveform '
+            'data'
+        )
+    if use_sxs is False:
+        md = sxs.metadata.Metadata.from_file(
+            f'{ext_dir}metadata.txt', cache_json=False
+        )
         W = scri.SpEC.read_from_h5(f'{ext_dir}{wf_path}')
 
         sxs_id = [name for name in md.alternative_names if 'SXS:BBH' in name]
@@ -235,7 +246,8 @@ def load_EXTNR_data(ext_dir=None, wf_path=None, use_sxs=False,
     W.t = W.t - W.t[trim_ind]
     return md, W, sxs_id
 
-def get_CCE_radii(simulation_dir, radius_index = None):
+
+def get_CCE_radii(simulation_dir, radius_index=None):
     """Returns CCE radii of a simulation.
 
     Parameters
@@ -250,21 +262,24 @@ def get_CCE_radii(simulation_dir, radius_index = None):
     radii : list of strings
         Simulation radii
     """
-    CCE_files = [filename for filename in os.listdir(simulation_dir) if 'rhOverM' in filename and '.h5' in filename]
+    CCE_files = [
+        filename for filename in os.listdir(simulation_dir)
+        if 'rhOverM' in filename and '.h5' in filename
+    ]
     radii = [filename.split('R')[1][:4] for filename in CCE_files]
     radii.sort(key=float)
-    if radius_index != None:
+    if radius_index is not None:
         return radii[radius_index:radius_index+1]
     else:
         return radii
-    
+
 
 def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
-    """Returns an AsymptoticBondiData object and CCE waveform. 
+    """Returns an AsymptoticBondiData object and CCE waveform.
 
     Example:
     load_CCENR_data("/Users/Username/Simulations/CCE_XXXX/LevX")
-    
+
     Paremeters
     ----------
     cce_dir : str
@@ -281,23 +296,25 @@ def load_CCENR_data(cce_dir=None, file_format='SXS', use_sxs=False, N_sim=2):
     h_CCE : WaveformModes object
         Waveform object with peak at t=0M.
     """
-    if use_sxs == False and cce_dir == None:
-        raise TypeError('Set use_sxs=True or give directory name to'\
-                ' the waveform data')
-    if use_sxs == False: 
+    if use_sxs is False and cce_dir is None:
+        raise TypeError(
+            'Set use_sxs=True or give directory name to the waveform data'
+        )
+    if use_sxs is False:
         radius = get_CCE_radii(cce_dir)[0]
-        abd_CCE = scri.SpEC.file_io.create_abd_from_h5(\
-                        h = f'{cce_dir}rhOverM_BondiCce_R{radius}_CoM.h5',
-                        Psi4 = f'{cce_dir}rMPsi4_BondiCce_R{radius}_CoM.h5',
-                        Psi3 = f'{cce_dir}r2Psi3_BondiCce_R{radius}_CoM.h5',
-                        Psi2 = f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}_CoM.h5',
-                        Psi1 = f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}_CoM.h5',
-                        Psi0 = f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}_CoM.h5',
-                        file_format = file_format)
-        h_CCE = MT_to_WM(2.0*abd_CCE.sigma.bar)
+        abd_CCE = scri.SpEC.file_io.create_abd_from_h5(
+            h=f'{cce_dir}rhOverM_BondiCce_R{radius}_CoM.h5',
+            Psi4=f'{cce_dir}rMPsi4_BondiCce_R{radius}_CoM.h5',
+            Psi3=f'{cce_dir}r2Psi3_BondiCce_R{radius}_CoM.h5',
+            Psi2=f'{cce_dir}r3Psi2OverM_BondiCce_R{radius}_CoM.h5',
+            Psi1=f'{cce_dir}r4Psi1OverM2_BondiCce_R{radius}_CoM.h5',
+            Psi0=f'{cce_dir}r5Psi0OverM3_BondiCce_R{radius}_CoM.h5',
+            file_format=file_format
+        )
+        h_CCE = abd_CCE.h
     else:
         abd_CCE = cce.load(N_sim)
-        h_CCE = MT_to_WM(2*abd_CCE.sigma.bar)
+        h_CCE = abd_CCE.h
 
     trim_ind = h_CCE.max_norm_index()
     h_CCE.t -= h_CCE.t[trim_ind]
