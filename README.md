@@ -14,7 +14,8 @@ coefficients.
 This code can handle both extrapolated and CCE waveforms from the SXS catalog,
 and it comes equipped with [`scri`](https://github.com/moble/scri/) based
 function that allows you to map the CCE waveform to the superrest frame of the
-remnant for a high-precision ringdown analysis.
+remnant for a high-precision ringdown analysis. Moreover, `qnmfits` can also be
+used to analyze ringdowns from generic waveforms. 
 
 ## Installation
 This packages uses [`scri`](https://github.com/moble/scri), which should be installed with `conda` (see the `scri` quickstart [here](https://github.com/moble/scri#quick-start)). It is recommended to install `scri` first, before installing this package:
