@@ -417,6 +417,154 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
     return result
 
 
+def fit_mass_spin(data, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
+                  t0_method='geq', chif0=0.7, Mf0=0.95,
+                  min_method='Nelder-Mead', min_options=None):
+    """
+    For a given set of QNMs and ringdown start time, find the remnant mass and
+    spin which minimizes the mismatch between the ringdown model and data
+    (calculated over the specified spherical-harmonic modes). This minimization
+    is done via scipy.optimize.minimize, with the requested method. The complex
+    QNM amplitudes are obtained via a least-squares fit, via qnmfits.fit.
+
+    Parameters
+    ----------
+    data : WaveformModes
+        Waveform data to fir the ringdown to. If only a subset of
+        spherical-harmonic modes are to be used, specify this via the
+        spherical_modes argument.
+
+    qnms : list of (ell, m, n, sign) tuples
+        List of quasinormal modes to include in the ringdown model. For regular
+        (positive real part) modes use sign=+1. For mirror (negative real part)
+        modes use sign=-1.
+
+    spherical_modes : list of (ell, m) tuples, optional [Default: None]
+        List of spherical-harmonic modes to fit the ringdown model to. If None,
+        the fit is performed over all available spherical modes in the data.
+
+    t0 : float, optional [Default: 0]
+        The ringdown model start time.
+
+    T : float, optional [Default: 100]
+
+    t_ref : float, optional [Default: None]
+        The time at which the QNM amplitudes are defined. If None, t_ref = t0.
+
+    t0_method : str, optional [Default: geq]
+        A requested ringdown start time will in general lie between times on
+        the data time array (the same is true for the end time of the
+        analysis). There are different approaches to deal with this, which can
+        be specified here.
+
+        Options are:
+
+            - 'geq'
+                Take data at times greater than or equal to t0. Note that
+                we still treat the ringdown start time as occuring at t0,
+                so the best fit coefficients are defined with respect to
+                t0.
+
+            - 'closest'
+                Identify the data point occuring at a time closest to t0,
+                and take times from there.
+
+    chif0 : float, optional [Default: 0.7]
+        Initial guess for the best-fit remnant spin.
+
+    Mf0 : float, optional [Default: 0.95]
+        Initial guess for the best-fit remnant mass.
+
+    min_method : str, optional [Default: 'Nelder-Mead']
+        The method used to find the mismatch minimum in the mass-spin space.
+        This can be any method available to scipy.optimize.minimize. This
+        includes None, in which case the method is automatically chosen.
+
+    min_options : dict, optional [Default: None]
+        Dictionary passed to the options argument of scipy.optimize.minimize.
+        If None, the following defaults are used:
+        {'xatol': 1e-6, 'disp': False}.
+
+    Returns
+    -------
+    result : dict
+        A dictionary of useful information related to the fit. The keys are
+        the same as for qnmfits.fit, with the addition of 'spin' and 'mass'.
+    """
+    # Initial guess for the minimization
+    x0 = [chif0, Mf0]
+
+    # Default options
+    default_min_options = {'xatol': 1e-6, 'disp': False}
+
+    # Merge user-provided options with defaults
+    if min_options is not None:
+        # User options override defaults
+        default_min_options.update(min_options)
+
+    bounds = [(0, 1.5), (0, 0.99)]
+
+    # Wrapper for the qnmfits.fit function which returns the mismatch of the
+    # fit, which we pass to scipy.optimize.minimize.
+    def goodness(x, data, qnms, spherical_modes, t0, T, t_ref, t0_method):
+
+        chif = x[0]
+        Mf = x[1]
+
+        if chif > 0.99:
+            chif = 0.99
+        if chif < 0:
+            chif = 0
+
+        best_fit = fit(
+            data=data,
+            chif=chif,
+            Mf=Mf,
+            qnms=qnms,
+            spherical_modes=spherical_modes,
+            t0=t0,
+            T=T,
+            t_ref=t_ref,
+            t0_method=t0_method
+        )
+
+        return best_fit['mismatch']
+
+    # Perform the SciPy minimization
+    res = minimize(
+        goodness,
+        x0,
+        args=(data, qnms, spherical_modes, t0, T, t_ref, t0_method),
+        method=min_method,
+        bounds=bounds,
+        options=min_options
+    )
+
+    # The remnant properties that give the minimum mismatch
+    chif_bestfit = res.x[0]
+    Mf_bestfit = res.x[1]
+
+    result = fit(
+        data=data,
+        chif=chif_bestfit,
+        Mf=Mf_bestfit,
+        qnms=qnms,
+        spherical_modes=spherical_modes,
+        t0=t0,
+        T=T,
+        t_ref=t_ref,
+        t0_method=t0_method
+    )
+
+    result['spin'] = chif_bestfit
+    result['mass'] = Mf_bestfit
+
+    return result
+
+
+# ---
+
+
 def qnm_modes(chif, M, mode_dict, dest=None, t0=0., t_ref=0., **kwargs):
     """
     WaveformModes object with multiple qnms, 0 elsewhere.
@@ -548,93 +696,9 @@ def qnm_modes_as(chif, M, mode_dict, W_other, dest=None, t0=0., t_ref=0.,
     )
 
 
-def fit_chif_M_and_modes(W, qnms, spherical_modes=None, t0=0., t_ref=0., 
-                        maxiter=1000, xtol=1e-8, ftol=1e-8):    
-    """
-    Use scipy.optimize.minimize to find best fit spin, mass, and QNM amplitudes
-    of a waveform.
-    
-    Parameters
-    ----------
-    W : WaveformModes object
-        Waveform to use for fitting spin, mass, and QNM amplitudes
-    
-    qnms : list of tuples (l, m, n, sign)
-        List of modes to fit over. 
-
-    spherical_modes : list of tuples (l,m), optional [Default: None]
-        A sequence of (l,m) modes to fit over. If None, all (l,m) modes in
-        model_labels are used.
-    
-    t0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t0.
-    
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-
-    maxiter : int, optional [Default: 1000]
-
-    xtol : float, optional [Default: 1e-8]
-
-    ftol : float, optional [Default: 1e-8]
-    
-    Returns
-    -------
-    chif : double
-        Best-fit spin.
-    
-    M : double
-        Best-fit mass.
-    
-    res_mode_dict : dict
-        Dictionary of QNM modes with complex amplitudes.
-    
-    res : scipy.optimize.OptimizeResult
-    """
-
-    dest_Q = np.zeros(W.data.shape, dtype=complex)
-    dest_diff = np.zeros(W.data.shape, dtype=complex)
-
-    W_fitted_modes = W.copy()
-    W_fitted_modes.data *= 0.
-    for LM_mode in list(set([(mode[0], mode[1]) for mode in qnms])):
-        W_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W_fitted_modes.ell_min)] = W.data[:,sf.LM_index(LM_mode[0], LM_mode[1], W.ell_min)]
-    
-    def goodness(chif_M, *args):
-        chif = chif_M[0]
-        M = chif_M[1]
-        if chif < 0.0 or chif > 0.99 or M < 0.0 or M > 1.0:
-            return 1e6
-        mode_dict = fit(W_fitted_modes, chif, M, qnms,
-                spherical_modes=spherical_modes, t0=t0, t_ref=t_ref)
-        Q = qnm_modes_as(chif, M, mode_dict, W_fitted_modes)
-        Q_fitted_modes = Q.copy()
-        Q_fitted_modes.data *= 0.
-        for LM_mode in list(set([(mode[0], mode[1]) for mode in qnms])):
-            Q_fitted_modes.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q_fitted_modes.ell_min)] = Q.data[:,sf.LM_index(LM_mode[0], LM_mode[1], Q.ell_min)]
-        diff = W_fitted_modes.copy()
-        diff.data -= Q_fitted_modes.data
-        return integrate(diff.norm(), diff.t)[-1]
-
-    x0 = [.7, .95]
-
-    bnds = [(0., .999), (.7, 1.)]
-    bnds = tuple(bnds)
-
-    res = minimize(goodness, x0,  method='Nelder-Mead', bounds=bnds, options={'maxiter': maxiter, 'maxfev': maxiter, 'xatol': xtol, 'fatol': ftol})
-    if (res.success):
-        chif = res.x[0]
-        M = res.x[1]
-        res_mode_dict = fit(W, chif, M, qnms,
-                            spherical_modes=spherical_modes, t0=t0, t_ref=t_ref)
-        return chif, M, res_mode_dict, res
-    else:
-        return None, None, None, res
-
-
 # Greedy-fit functions
 # --------------------
-    
+
 def mode_power_order(W, topN=10, t0=-np.Inf):
     """Returns a list of topN indices sorted by power per mode for a waveform.
 
@@ -693,7 +757,7 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
 
         max_n_so_far = np.max(ns_so_far) if len(ns_so_far)>0 else -1
         new_n = max_n_so_far + 1
-        
+
         if new_n <= n_max:
             if (loudest_m == 0) or retrograde:
                 new_modes[(loudest_l, loudest_m, new_n, +1)] = None
@@ -705,6 +769,7 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
         elif new_n > n_max and (loudest_l, loudest_m) == (loudest_lms[-1][0], loudest_lms[-1][1]):
             print("Cannot find a valid mode to add.")
     return new_modes
+
 
 def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max, 
                        nmodes_to_report=None, initial_modes_dict={}, t0=0.,
