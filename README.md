@@ -1,3 +1,7 @@
+![PyPI - Version](https://img.shields.io/pypi/v/qnmfits)
+![Conda Version](https://img.shields.io/conda/v/conda-forge/qnmfits)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14806974.svg)](https://doi.org/10.5281/zenodo.14806974)
+
 # Welcome to qnmfits
 
 `qnmfits` is an open-source Python code for least-squares fitting of quasinormal modes to ringdown waveforms.
