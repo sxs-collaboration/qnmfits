@@ -7,7 +7,8 @@ import bisect
 from scipy.optimize import minimize
 from scri.sample_waveforms import modes_constructor
 
-from .read_qnms import qnm_from_tuple
+from .read_qnms import qnm_loader
+qnm_loader = qnm_loader()
 
 
 def mismatch(h_A, h_B, t0, T, spherical_modes=None):
@@ -129,7 +130,9 @@ def qnm_WaveformModes(times, chif, Mf, qnm_amps, t0=0, t_ref=None, ell_min=2,
         # Get the complex QNM frequencies omega and the spherical-spheroidal
         # mixing coefficients C. C is a list of mixing coefficients,
         # corresponding to different ell values (given by C_ells).
-        omega, C, C_ells = qnm_from_tuple((ell, m, n, sign), chif, Mf)
+        omega, C, C_ells = qnm_loader.qnm_from_tuple(
+            (ell, m, n, sign), chif, Mf
+        )
 
         # Construct the pure QNM damped sinusoid. This has not yet been
         # weighted by the spherical-spheroidal mixing coefficients.
@@ -343,7 +346,7 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
             # spheroidal mixing coefficients C. C is a list of mixing
             # coefficients, corresponding to different ell values (given by
             # C_ells).
-            omega, C, C_ells = qnm_from_tuple(label, chif, Mf)
+            omega, C, C_ells = qnm_loader.qnm_from_tuple(label, chif, Mf)
 
             qnm_freqs[label] = omega
 
@@ -616,7 +619,7 @@ def qnm_modes(chif, M, mode_dict, dest=None, t0=0., t_ref=0., **kwargs):
             data.fill(0.)
 
         for (ell_prime, m_prime, n, sign), A in mode_dict.items():
-            omega, C, ells = qnm_from_tuple(
+            omega, C, ells = qnm_loader.qnm_from_tuple(
                 (ell_prime, m_prime, n, sign), chif, M, s
             )
 
