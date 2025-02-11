@@ -37,6 +37,22 @@ pip install .
 
 Automatically-generated API documentation is available on [Read the Docs: qnmfits](https://qnmfits.readthedocs.io/). -->
 
+## A note on QNM labeling
+
+In this package QNMs are specified with four numbers: `(ell, m, n, sign)`. The first three numbers refer to the usual angular (`ell`), azimuthal (`m`), and overtone (`n`) indices. The fourth number is either `+1` or `-1`, and refers to the sign of the real part of the QNM frequency. In other words, `sign=1` refers to the "regular" QNMs to the right of the imaginary axis, and `sign=-1` refers to "mirror" QNMs to the left of the imaginary axis. Note that this is different to the prograde (co-rotating) and retrograde (counter-rotating) classification you sometimes see.
+
+For data which the `qnm` package can't compute (for example, the special $(2,2,8)$ "multiplet"), additional data can be downloaded with the code
+```python
+import qnmfits
+qnmfits.download_cook_data()
+```
+which downloads the Cook & Zalutskiy data from [here](https://zenodo.org/records/10093311).
+Note that there are different labelling conventions for these multiplets. For example, the Schwarzschild $(2,2,8)$ QNM has the behaviour of "splitting" into two branches when the spin is increased:
+
+![QNM multiplet taxonomy](https://github.com/eliotfinch/qnmfits/raw/main/examples/qnm_multiplet_taxonomy.png)
+
+This has led to these two branches being labelled as $(2,2,8_0)$ and $(2,2,8_1)$ by Cook & Zalutskiy ([arxiv:1607.07406](http://arxiv.org/abs/1607.07406)). However, from a practical perspective we will be mostly working with Kerr black holes, and these two branches behave as a $n=8$ and $n=9$ overtone. So, as indicated by the figure above, we label them as such (this follows the convention of Forteza & Mourier ([arXiv:2107.11829](http://arxiv.org/abs/2107.11829))).
+
 ## Usage
 
 Perform a seven-overtone fit to the (2,2) mode of SXS:BBH_ExtCCE:0001:
