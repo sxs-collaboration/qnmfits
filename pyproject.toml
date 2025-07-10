@@ -17,8 +17,8 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy"
   ]
 dependencies = [
-  "scri <= 2022.9.0",
-  "qnm >= 0.4.3",
+  "qnm >= 0.4.4",
+  "scri",
   "tqdm"
   ]
 
