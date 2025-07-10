@@ -5,7 +5,6 @@ import scri
 import bisect
 
 from scipy.optimize import minimize
-from scri.sample_waveforms import modes_constructor
 
 from .read_qnms import qnm_loader
 qnm_loader = qnm_loader()
@@ -64,6 +63,49 @@ def mismatch(h_A, h_B, t0, T, spherical_modes=None):
         h_B_norm = np.real(h_B.inner_product(h_B, t1=t0, t2=t0+T))
 
         return 1 - numerator/np.sqrt(h_A_norm*h_B_norm)
+
+
+def window(data, t0, t0_method, T):
+    """
+    Window the data to the specified time range.
+
+    Parameters
+    ----------
+    data : WaveformModes
+        The waveform data to window.
+
+    t0 : float
+        The start time of the window.
+
+    t0_method : str
+        The method to use for determining the start time. Can be 'geq' or
+        'closest'.
+
+    T : float
+        The duration of the window.
+
+    Returns
+    -------
+    h_cut : WaveformModes
+        The windowed waveform data.
+    """
+
+    # Window the data
+    if t0_method == 'geq':
+        start_index = bisect.bisect_left(data.t, t0)
+        end_index = bisect.bisect_left(data.t, t0+T) - 1
+        h_cut = data.copy()[start_index:end_index, :]
+
+    elif t0_method == 'closest':
+        h_cut = data.copy()[
+            np.argmin(abs(data.t - t0)):np.argmin(abs(data.t - t0 - T))+1, :
+        ]
+
+    else:
+        print("""Requested t0_method is not valid. Please choose between 'geq'
+              and 'closest'""")
+
+    return h_cut
 
 
 def qnm_WaveformModes(times, chif, Mf, qnm_amps, t0=0, t_ref=None, ell_min=2,
@@ -170,7 +212,7 @@ def qnm_WaveformModes(times, chif, Mf, qnm_amps, t0=0, t_ref=None, ell_min=2,
     return wm
 
 
-def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
+def fit(data, chif, Mf, t0, qnms, spherical_modes=None, T=100, t_ref=None,
         t0_method='geq'):
     """
     Find the best-fit (as determined by a least-squares fit) complex QNM
@@ -282,19 +324,7 @@ def fit(data, chif, Mf, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
             m_list.append(m)
 
     # Window the data
-    if t0_method == 'geq':
-        start_index = bisect.bisect_left(data.t, t0)
-        end_index = bisect.bisect_left(data.t, t0+T) - 1
-        h_cut = data.copy()[start_index:end_index, :]
-
-    elif t0_method == 'closest':
-        h_cut = data.copy()[
-            np.argmin(abs(data.t - t0)):np.argmin(abs(data.t - t0 - T))+1, :
-        ]
-
-    else:
-        print("""Requested t0_method is not valid. Please choose between 'geq'
-              and 'closest'""")
+    h_cut = window(data, t0=t0, t0_method=t0_method, T=T)
 
     # Break problem into one m at a time. The m's are decoupled, and the
     # truncation in ell for each m is different.
@@ -567,139 +597,7 @@ def fit_mass_spin(data, qnms, spherical_modes=None, t0=0, T=100, t_ref=None,
 # Greedy-fit functions
 # --------------------
 
-
-def qnm_modes(chif, M, mode_dict, dest=None, t0=0., t_ref=0., **kwargs):
-    """
-    WaveformModes object with multiple qnms, 0 elsewhere.
-
-    Additional keyword arguments are passed to `modes_constructor`.
-
-    Parameters
-    ----------
-    chif : float
-        The dimensionless spin of the black hole, 0. <= chif < 1.
-
-    M : float
-        The mass of the black hole, M > 0.
-
-    mode_dict : dict
-        Dict with keys in the format (l, m, n, sign) which is a QNM index,
-        and values are a complex amplitude for that index.
-
-    dest : ndarray, optional [Default: None]
-        If passed, the storage to use for the WaveformModes.data.
-        Must be the correct shape.
-
-    t0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t0.
-
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-
-    Returns
-    -------
-    Q : WaveformModes object
-    """
-    s = -2
-
-    def data_functor(t, LM):
-
-        d_shape = (t.shape[0], LM.shape[0])
-
-        if (dest is None):
-            # Need to allocate
-            data = np.zeros(d_shape, dtype=complex)
-        else:
-            if (
-                (dest.shape != d_shape) or
-                (dest.dtype is not np.dtype(complex))
-            ):
-                raise TypeError("dest has wrong dtype or shape")
-            data = dest
-            data.fill(0.)
-
-        for (ell_prime, m_prime, n, sign), A in mode_dict.items():
-            omega, C, ells = qnm_loader.qnm_from_tuple(
-                (ell_prime, m_prime, n, sign), chif, M, s
-            )
-
-            expiwt = np.exp(complex(0., -1.) * omega * (t - t_ref))
-            expiwt[t < t0] = 0.
-            for _l, _m in LM:
-                if (_m == m_prime):
-                    c_l = C[ells == _l]
-                    if (len(c_l) > 0):
-                        c_l = c_l[0]
-                        data[:, sf.LM_index(_l, _m, min(LM[:, 0]))] += \
-                            c_l * A * expiwt
-
-        return data
-
-    constructor_statement = \
-        'qnm_modes({0}, {1}, {2}, t0={3}, t_ref={4}, **{5})'.format(
-            chif, M, mode_dict, t0, t_ref, kwargs
-        )
-
-    return modes_constructor(constructor_statement, data_functor, **kwargs)
-
-
-def qnm_modes_as(chif, M, mode_dict, W_other, dest=None, t0=0., t_ref=0.,
-                 **kwargs):
-    """
-    WaveformModes object with multiple qnms, 0 elsewhere, with time
-    and LM following W_other.
-
-    Additional keyword arguments are passed to `modes_constructor`.
-
-    Parameters
-    ----------
-    chif : float
-        The dimensionless spin of the black hole, 0. <= chif < 1.
-
-    M : float
-        The mass of the black hole, M > 0.
-
-    mode_dict : dict
-        Dict with keys in the format (l, m, n, sign) which is a QNM index,
-        and values are a complex amplitude for that index.
-
-    W_other : WaveformModes object
-        Get the time and LM from this WaveformModes object
-
-    dest : ndarray, optional [Default: None]
-        If passed, the storage to use for the WaveformModes.data.
-        Must be the correct shape.
-
-    t0 : float, optional [Default: 0.]
-        Waveform model is 0 for t < t0.
-
-    t_ref : float, optional [Default: 0.]
-        Time at which amplitudes are specified.
-
-    Returns
-    -------
-    Q : WaveformModes object
-        A WaveformModes object filled with the model waveform
-    """
-    t = W_other.t
-    ell_min = W_other.ell_min
-    ell_max = W_other.ell_max
-
-    return qnm_modes(
-        chif,
-        M,
-        mode_dict,
-        dest=dest,
-        t0=t0,
-        t_ref=t_ref,
-        t=t,
-        ell_min=ell_min,
-        ell_max=ell_max,
-        **kwargs
-    )
-
-
-def mode_power_order(W, topN=10, t0=-np.Inf):
+def mode_power_order(W, topN=10, t0=-np.inf):
     """Returns a list of topN indices sorted by power per mode for a waveform.
 
     Parameters
@@ -708,7 +606,7 @@ def mode_power_order(W, topN=10, t0=-np.Inf):
 
     topN : int, optional [Default: 10]
 
-    t0 : float, optional [Default: -np.Inf]
+    t0 : float, optional [Default: -np.inf]
         Only compute power after t0.
 
     Returns
@@ -778,10 +676,10 @@ def add_modes(modes_so_far_dict, loudest_lms, n_max=7, retrograde=False):
     return new_modes
 
 
-def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
-                       nmodes_to_report=None, initial_modes_dict={}, t0=0.,
-                       t_ref=0., T=90., n_max=7, interpolate=True,
-                       use_news_power=True, retrograde=False):
+def pick_nmodes_greedy(data, chif, Mf, t0, target_frac, num_modes_max,
+                       initial_modes_dict={}, T=100, t_ref=None,
+                       t0_method='geq', n_max=7, use_news_power=True,
+                       retrograde=False):
     """
     Calculates the fraction of unmodeled power and mismatch for each number
     of modes in nmodes_to_report. By default, the power is calculated using the
@@ -850,116 +748,108 @@ def pick_nmodes_greedy(W, chif, M, target_frac, num_modes_max,
     wf_mismatches : list
       Mismatches between W and Q for each nmode_to_report
     """
+    if t_ref is None:
+        t_ref = t0
 
-    # Make sure that target_frac is between 0 and 1,
+    # Make sure that target_frac is between 0 and 1
+    if not 0 <= target_frac <= 1:
+        raise ValueError(
+            f"target_frac={target_frac} should be between 0 and 1."
+        )
+
     # Make sure that num_modes_max is a non-negative integer
-    if not ((0. <= target_frac) or (target_frac <= 1.)):
-        raise ValueError("target_frace={} should be "
-                         "between 0 and 1.".format(target_frac))
-
-    if not (num_modes_max > 0):
-        raise ValueError("num_modes_max={} must be "
-                         "greater than 0.".format(num_modes_max))
+    if not num_modes_max > 0:
+        raise ValueError(
+            f"num_modes_max={num_modes_max} must be greater than 0."
+        )
 
     if None in initial_modes_dict.values():
-        raise ValueError("All values in initial_modes_dict should be complex "
-                         "numbers.")
+        raise ValueError(
+            "All values in initial_modes_dict should be complex numbers."
+        )
 
-    if nmodes_to_report is None:
-        nmodes_to_report = []
+    # if nmodes_to_report is None:
+    #     nmodes_to_report = []
 
-    # Make sure that the waveform starts at t0, otherwise
-    # inner_product returns faulty values due to interpolation issues
-    if interpolate:
-        W = W[np.argmin(abs(W.t - t0)):]
+    # Window the data
+    data = window(data, t0=t0, t0_method=t0_method, T=T)
 
     if use_news_power:
-        if W.dataType == scri.h:
-            W_power_waveform = W.copy()
-            W_power_waveform.data = W.data_dot
+        if data.dataType == scri.h:
+            W_power_waveform = data.copy()
+            W_power_waveform.data = data.data_dot
             W_power_waveform.dataType = scri.hdot
-        elif W.dataType == scri.hdot:
-            W_power_waveform = W.copy()
+        elif data.dataType == scri.hdot:
+            W_power_waveform = data.copy()
         else:
             raise ValueError("W is not of type scri.h or scri.hdot")
     else:
-        W_power_waveform = W.copy()
-    W_power = np.real(W_power_waveform.inner_product(W_power_waveform, t1=t0))
+        W_power_waveform = data.copy()
 
-    # Initially, the difference between the waveform and model is just
-    # the waveform itself.
+    W_power = np.real(
+        W_power_waveform.inner_product(W_power_waveform, t1=t0, t2=t0+T)
+    )
+
+    # Initially, the difference between the waveform and model is just the
+    # waveform itself
     diff = W_power_waveform.copy()
 
-    mode_dict = initial_modes_dict
-    frac_unmodeled_powers = []
-    wf_mismatches = []
-    mode_dicts = []
+    mode_dict = initial_modes_dict.copy()
     for i_mode in np.arange(0, num_modes_max):
 
         # Add one or two modes
-        num_modes = len(W.LM)
+        num_modes = len(data.LM)
         loudest_lms = mode_power_order(diff, topN=num_modes, t0=t0)
-
         mode_dict = add_modes(mode_dict, loudest_lms, n_max, retrograde)
 
         # Build a ringdown model
         qnms = list(mode_dict.keys())
         best_fit = fit(
-            W, chif, M, qnms, spherical_modes=None, t0=t0, t_ref=t_ref
+            data=data,
+            chif=chif,
+            Mf=Mf,
+            t0=t0,
+            qnms=qnms,
+            spherical_modes=None,
+            t_ref=t_ref
         )
-        mode_dict = best_fit['amplitudes']
+        amp_dict = best_fit['amplitudes']
 
-        Q = qnm_modes_as(chif, M, mode_dict, W, t0=t0, t_ref=t_ref)
+        Q = qnm_WaveformModes(
+            times=data.t,
+            chif=chif,
+            Mf=Mf,
+            qnm_amps=amp_dict,
+            t0=t0,
+            t_ref=t_ref,
+            ell_min=data.ell_min,
+            ell_max=data.ell_max,
+            t0_method=t0_method,
+        )
 
         # How much power is unmodeled?
         if use_news_power:
-            if W.dataType == scri.h:
-                np.subtract(W.data, Q.data, out=diff.data)
+            if data.dataType == scri.h:
+                np.subtract(data.data, Q.data, out=diff.data)
                 diff.data = diff.data_dot
-            elif W.dataType == scri.hdot:
-                np.subtract(W.data, Q.data, out=diff.data)
+            elif data.dataType == scri.hdot:
+                np.subtract(data.data, Q.data, out=diff.data)
         else:
-            np.subtract(W.data, Q.data, out=diff.data)
-        diff_power = np.real(diff.inner_product(diff, t1=t0))
+            np.subtract(data.data, Q.data, out=diff.data)
+        diff_power = np.real(diff.inner_product(diff, t1=t0, t2=t0+T))
         frac_unmodeled_power = diff_power / W_power
 
-        if i_mode+1 in nmodes_to_report:
-            frac_unmodeled_powers.append(frac_unmodeled_power)
-            wf_mismatches.append(mismatch(W, Q, t0, T, spherical_modes=None))
-            mode_dicts.append(mode_dict)
+        # if i_mode+1 in nmodes_to_report:
+        #     frac_unmodeled_powers.append(frac_unmodeled_power)
+        #     wf_mismatches.append(
+        #         mismatch(h_A=data, h_B=Q, t0=t0, T=T, spherical_modes=None)
+        #     )
+        #     mode_dicts.append(mode_dict)
 
-        if (frac_unmodeled_power < target_frac):
+        if frac_unmodeled_power < target_frac:
             break  # Don't need to add any more modes
 
-    frac_unmodeled_powers.append(frac_unmodeled_power)
-    wf_mismatches.append(mismatch(W, Q, t0, T, spherical_modes=None))
-    mode_dicts.append(mode_dict)
+    wf_mismatch = mismatch(h_A=data, h_B=Q, t0=t0, T=T, spherical_modes=None)
+
     # We've hit the max number of modes
-    return mode_dicts, Q, diff, frac_unmodeled_powers, wf_mismatches
-
-
-def pick_modes_greedy(W, chif, M, target_frac, num_modes_max,
-                      initial_modes_dict={}, t0=0., t_ref=0., T=90., n_max=7,
-                      interpolate=True, use_news_power=True, retrograde=False):
-    """
-    Calculates the fraction of unmodeled power and mismatch for the
-    num_modes_max number of modes.
-    """
-    mode_dict, Q, diff, power, mismatch = pick_nmodes_greedy(
-        W,
-        chif,
-        M,
-        target_frac,
-        num_modes_max,
-        nmodes_to_report=None,
-        initial_modes_dict=initial_modes_dict,
-        t0=t0,
-        t_ref=t_ref,
-        T=T,
-        n_max=n_max,
-        interpolate=interpolate,
-        use_news_power=use_news_power,
-        retrograde=retrograde
-    )
-
-    return mode_dict[0], Q, diff, power[0], mismatch[0]
+    return amp_dict, Q, diff, frac_unmodeled_power, wf_mismatch
