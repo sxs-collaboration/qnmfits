@@ -190,7 +190,8 @@ def qnm_WaveformModes(times, chif, Mf, qnm_amps, t0=0, t_ref=None, ell_min=2,
             if (m_prime == m):
 
                 # Get the mixing coefficient between the (ell, m, n) QNM and
-                # the (ell', m') sppherical-harmonic mode
+                # the (ell', m') spherical-harmonic mode. We index with [0] to
+                # turn an array into a float (but this might not be needed).
                 C_ell = C[C_ells == ell_prime][0]
 
                 # Add the weighted QNM to the appropriate spherical mode
@@ -388,7 +389,7 @@ def fit(data, chif, Mf, t0, qnms, spherical_modes=None, T=100, t_ref=None,
             for i, ell_prime in enumerate(spherical_ell_list):
 
                 # Get the mixing coefficient between the (ell, m, n) QNM and
-                # the (ell', m') sppherical-harmonic mode
+                # the (ell', m') spherical-harmonic mode
                 C_ell = C[C_ells == ell_prime][0]
 
                 # Store the weighted QNM
