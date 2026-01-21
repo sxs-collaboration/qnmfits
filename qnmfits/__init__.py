@@ -1,7 +1,5 @@
-"""Fitting of quasinormal modes to ringdown waveforms."""
+__version__ = "2026.1.0"
 
-__version__ = "2025.3.1"
+from . import lsq
 
-from .qnmfits import *
-from .utils import *
-from .read_qnms import download_cook_data
+__all__ = ["lsq"]

@@ -7,7 +7,7 @@ license = {file = "LICENSE"}
 authors = [
   { name = "Lorena Magaña Zertuche", email = "lmaganaz@go.olemiss.edu" },
   { name = "Eliot Finch", email = "efinch@caltech.edu" }
-  ]
+]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -15,20 +15,15 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Physics",
   "Topic :: Scientific/Engineering :: Astronomy"
-  ]
+]
+requires-python = ">=3.11"
 dependencies = [
-  "qnm >= 0.4.4",
-  "scri",
-  "tqdm"
-  ]
+    "jax>=0.9.0",
+    "matplotlib>=3.10.8",
+    "qnm>=0.4.4",
+    "sxs>=2025.0.22",
+]
 
 [project.urls]
 Homepage = "https://github.com/sxs-collaboration/qnmfits"
 Documentation = "https://qnmfits.readthedocs.io/"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.version]
-path = "qnmfits/__init__.py"
